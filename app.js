@@ -58,7 +58,10 @@ function simulate(){let left={...state.capacities},awards=[];for(let i=0;i<state
  if(!exc)for(let j=0;j<bids.length;j++){let n=bids[j];if(left[n]>0){got=n;rank=j+1;left[n]--;break}}
  awards.push({name:p.name,seniority:i+1,line:got,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length})}
  state.awards=awards;render()}
-function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots()}
+function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line;
+ $('whoAmIFlyingWith').disabled=!me?.line;
+ if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();
+ if(!$('flyingWith').classList.contains('hidden'))showFlyingWith();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots()}
 function renderPilots(){let q=$('search').value.trim().toLowerCase(),list=state.awards.filter(p=>!q||p.name.toLowerCase().includes(q)||('f'+p.line).toLowerCase()===q);$('pilotList').replaceChildren(...list.map(p=>{let d=document.createElement('div');d.className='pilot';let a=document.createElement('div'),b=document.createElement('b'),sm=document.createElement('small');a.textContent=`${p.seniority}. ${p.name}`;sm.textContent=p.excluded?p.excluded:p.blank?'No bid submitted':p.line?`Choice #${p.rank}`:'No available submitted choice';a.append(sm);b.textContent=p.excluded?'Excluded':p.line?'F'+p.line:'—';d.append(a,b);return d}))}
 $('search').oninput=renderPilots;
 function selectPilot(name){
@@ -185,6 +188,38 @@ async function showProjectedLine(){
   if(token===lineViewToken)$('lineDetailMessage').textContent='Unable to display the PDF chart: '+e.message;
  }
 }
+
+function showFlyingWith(){
+ const me=state.awards.find(p=>p.name===state.selectedName);
+ if(!me?.line){$('flyingWith').classList.add('hidden');return}
+ $('flyingWithTitle').textContent=`Who am I flying with on F${me.line}?`;
+ $('flyingWith').classList.remove('hidden');
+ const partners=state.awards.filter(p=>p.line===me.line&&p.name!==me.name);
+ $('flyingWithList').replaceChildren(...partners.map(p=>{
+   const row=document.createElement('div');
+   row.className='flying-with-pilot';
+   const info=document.createElement('div');
+   const name=document.createElement('strong');
+   const meta=document.createElement('small');
+   name.textContent=p.name;
+   meta.textContent=`Seniority #${p.seniority}${p.rank?` · Choice #${p.rank}`:''}`;
+   info.append(name,meta);
+   const line=document.createElement('span');
+   line.className='flying-with-line';
+   line.textContent='F'+p.line;
+   row.append(info,line);
+   return row;
+ }));
+ $('flyingWithMessage').textContent=partners.length
+   ? `${partners.length} other first officer${partners.length===1?'':'s'} ${partners.length===1?'is':'are'} currently projected to hold this line.`
+   : 'No other first officer is currently projected to hold this line.';
+}
+$('whoAmIFlyingWith').onclick=()=>{
+ if($('flyingWith').classList.contains('hidden'))showFlyingWith();
+ else $('flyingWith').classList.add('hidden');
+};
+$('closeFlyingWith').onclick=()=>$('flyingWith').classList.add('hidden');
+
 $('viewProjectedLine').onclick=()=>{
  if($('lineDetail').classList.contains('hidden'))showProjectedLine();
  else{$('lineDetail').classList.add('hidden');lineViewToken++;}

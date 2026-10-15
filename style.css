@@ -7,3 +7,12 @@
 .line-chart canvas{display:block;width:100%;height:auto}
 .line-chart.zoomed canvas{width:950px;max-width:none}
 .line-zoom{display:block;width:100%;margin:8px 0;background:#eaf1fa;color:#173d66}
+
+.secondary{background:#e9eff6;color:#173d67}
+.flying-with{background:#fff;border-radius:16px;padding:18px;box-shadow:0 2px 12px #14263b08}
+.flying-with-list{display:grid;gap:8px;margin-top:10px}
+.flying-with-pilot{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f4f7fb;border-radius:12px;padding:12px 13px}
+.flying-with-pilot strong{font-size:14px;color:#142a42}
+.flying-with-pilot small{display:block;color:#718497;font-size:11px;margin-top:3px}
+.flying-with-line{font-weight:800;color:#173d67;white-space:nowrap}
+.flying-with-empty{background:#f4f7fb;border-radius:12px;padding:13px;color:#687b8c;font-size:13px}
