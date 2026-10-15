@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 const defaultChoices=[49,89,66,31,85,75,86,88,76,29,10,19,78,36,57,47,82,8,12,67,7,80,37,72,64,32,53,69,42,1,56,20,24,3,2];
-let state={people:[],capacities:{},details:{},schedules:{},excluded:[],awards:[],selectedName:'',overrides:{}};
+let state={people:[],capacities:{},details:{},pageMap:{},excluded:[],awards:[],selectedName:'',overrides:{}};
 $('choices').value='';
 const DB_NAME='sbo-bid-tracker-local-v1', DB_STORE='saved';
 function openDB(){return new Promise((resolve,reject)=>{let req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>req.result.createObjectStore(DB_STORE);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
@@ -39,16 +39,21 @@ function parseBidRows(r){ // The company export uses repeated Name/Choice/Line r
  }
  for(let p of people){p.raw.sort((a,b)=>a.rank-b.rank||a.seq-b.seq);p.bids=[...new Set(p.raw.map(x=>x.n))];delete p.raw}
  return people.filter(x=>x.name.length>3)}
-async function parsePdf(file){if(!window.pdfjsLib)throw Error('PDF library unavailable. Connect to the internet and reload.');pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';let doc=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;let capacities={},details={},schedules={};
- for(let i=1;i<=doc.numPages;i++){let page=await doc.getPage(i),content=await page.getTextContent(),items=content.items.map(x=>x.str),t=items.join(' ');let id=t.match(/\bF\s*(\d{1,3})\s*[-–]\s*\d+\s*\/\s*(\d+)\b/i);if(!id)continue;let n=Number(id[1]);capacities[n]=Number(id[2]);let credit=t.match(/Credit\s*time\s*:\s*(\d{1,3}:\d{2})/i),days=t.match(/Duty\s*days\s*:\s*(\d+)/i);details[n]={credit:credit?.[1]||'—',duties:days?.[1]||'—'};
- // Keep a readable, on-device transcription of the corresponding PDF page.
- // Text coordinates are used to preserve rows and columns as far as PDF extraction permits.
- const textItems=content.items.filter(x=>x.str&&x.str.trim()).map(x=>({str:x.str.trim(),x:x.transform?.[4]||0,y:x.transform?.[5]||0}));
- const lines=[];for(const item of textItems){let row=lines.find(r=>Math.abs(r.y-item.y)<3);if(!row){row={y:item.y,items:[]};lines.push(row)}row.items.push(item)}
- lines.sort((a,b)=>b.y-a.y);
- schedules[n]=lines.map(r=>{let prev=null;return r.items.sort((a,b)=>a.x-b.x).map(it=>{let gap=prev?Math.max(1,Math.min(12,Math.round((it.x-prev.x)/9)-Math.ceil(prev.str.length/2))):0;prev=it;return ' '.repeat(gap)+it.str}).join('').trimEnd()}).join('\n');
+async function parsePdf(file){
+ if(!window.pdfjsLib)throw Error('PDF library unavailable. Connect to the internet and reload.');
+ pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+ const doc=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;
+ const capacities={},details={},pageMap={};
+ for(let i=1;i<=doc.numPages;i++){
+  const page=await doc.getPage(i),content=await page.getTextContent(),t=content.items.map(x=>x.str).join(' ');
+  const id=t.match(/\bF\s*(\d{1,3})\s*[-–]\s*\d+\s*\/\s*(\d+)\b/i);
+  if(!id)continue;
+  const n=Number(id[1]);capacities[n]=Number(id[2]);pageMap[n]=i;
+  const credit=t.match(/Credit\s*time\s*:\s*(\d{1,3}:\d{2})/i),days=t.match(/Duty\s*days\s*:\s*(\d+)/i);
+  details[n]={credit:credit?.[1]||'—',duties:days?.[1]||'—'};
  }
- return {capacities,details,schedules}}
+ return {capacities,details,pageMap};
+}
 function simulate(){let left={...state.capacities},awards=[];for(let i=0;i<state.people.length;i++){let p=state.people[i],exc=state.excluded.find(e=>match(e.name,p.name)),bids=state.overrides[p.name]||p.bids,got=null,rank=null;
  if(!exc)for(let j=0;j<bids.length;j++){let n=bids[j];if(left[n]>0){got=n;rank=j+1;left[n]--;break}}
  awards.push({name:p.name,seniority:i+1,line:got,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length})}
@@ -85,20 +90,21 @@ $('analyze').onclick=async()=>{
    status.textContent='Reading updated FO bids…';
    const people=parseBidRows(rows(await excel(bf),'Sheet1'));
    if(people.length<30)throw Error(`Only ${people.length} pilots identified in the bid report. Please check the export format.`);
-   let capacities,details,excluded,schedules;
+   let capacities,details,excluded,pageMap;
    if(pf&&rf){
      status.textContent='Reading new monthly lines and exclusions…';
      const pdf=await parsePdf(pf);
-     capacities=pdf.capacities;details=pdf.details;schedules=pdf.schedules;
+     capacities=pdf.capacities;details=pdf.details;pageMap=pdf.pageMap;
      excluded=parseRoster(await excel(rf));
      if(Object.keys(capacities).length<40)throw Error(`Only ${Object.keys(capacities).length} lines identified in PDF.`);
    }else{
-     capacities={...base.capacities};details={...base.details};schedules={...(base.schedules||{})};excluded=base.excluded;
+     capacities={...base.capacities};details={...base.details};pageMap={...(base.pageMap||{})};excluded=base.excluded;
    }
    for(const m of $('capacities').value.matchAll(/F?\\s*(\\d+)\\s*=\\s*(\\d+)/gi))capacities[Number(m[1])]=Number(m[2]);
    const updatedAt=new Date().toISOString();
-   const next={people,capacities,details,schedules,excluded,overrides:{},updatedAt};
+   const next={people,capacities,details,pageMap,excluded,overrides:{},updatedAt};
    // Save first, then update the live display, so a failed write cannot masquerade as success.
+   if(pf)await dbPut('linesPdf',pf);
    await dbPut('parsed',next);
    state={...state,...next};
    populatePilots();simulate();
@@ -136,15 +142,55 @@ $('refreshUpdate').onclick=async()=>{
  }
 };
 
-// View the selected pilot's projected line from the locally imported 777 Lines PDF.
-function showProjectedLine(){
+// Render the original Jeppesen line chart directly from the imported PDF.
+// No transcription or invented day-by-day data. All PDF data stays on this device.
+let lineViewToken=0;
+async function showProjectedLine(){
  const me=state.awards.find(p=>p.name===state.selectedName);
  if(!me?.line){$('lineDetail').classList.add('hidden');return}
+ const token=++lineViewToken;
  $('lineDetailTitle').textContent='Projected line F'+me.line;
- const schedule=state.schedules?.[me.line];
- $('lineDetailMessage').textContent=schedule?'Schedule text extracted from the monthly 777 Lines PDF. Check the original PDF for exact formatting and trip details.':'Schedule details were not saved by your previous app version. Reimport the monthly 777 Lines PDF and Bid List together with a current FO bids export in Settings to enable this view.';
- $('lineSchedule').textContent=schedule||'';
  $('lineDetail').classList.remove('hidden');
+ $('lineDetailMessage').textContent='Loading original line chart…';
+ $('lineChart').replaceChildren();
+ $('lineZoom').classList.add('hidden');
+ try{
+  const pageNumber=state.pageMap?.[me.line];
+  const pdfBlob=await dbGet('linesPdf');
+  if(!pageNumber||!pdfBlob){
+   $('lineDetailMessage').textContent='To view the original line chart, reimport this month’s 777 Lines PDF and Bid List together with the FO bids report. Your saved projection remains available.';
+   return;
+  }
+  if(!window.pdfjsLib)throw Error('PDF viewer unavailable. Connect to the internet and reload.');
+  pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf=await pdfjsLib.getDocument({data:await pdfBlob.arrayBuffer()}).promise;
+  const page=await pdf.getPage(pageNumber);
+  // PDF is landscape. The schedule occupies its upper half; crop blank lower page.
+  const viewport=page.getViewport({scale:2.2});
+  const full=document.createElement('canvas');
+  full.width=Math.ceil(viewport.width);full.height=Math.ceil(viewport.height);
+  await page.render({canvasContext:full.getContext('2d'),viewport}).promise;
+  if(token!==lineViewToken)return;
+  const left=Math.floor(full.width*.025),top=Math.floor(full.height*.12);
+  const width=Math.floor(full.width*.93),height=Math.floor(full.height*.43);
+  const cropped=document.createElement('canvas');
+  cropped.width=width;cropped.height=height;
+  cropped.getContext('2d').drawImage(full,left,top,width,height,0,0,width,height);
+  cropped.setAttribute('role','img');
+  cropped.setAttribute('aria-label','Original Kalitta PDF chart for line F'+me.line);
+  $('lineChart').append(cropped);
+  $('lineZoom').classList.remove('hidden');
+  $('lineDetailMessage').textContent='Original chart from your imported PDF. Tap Enlarge for a clearer view, then scroll sideways.';
+ }catch(e){
+  if(token===lineViewToken)$('lineDetailMessage').textContent='Unable to display the PDF chart: '+e.message;
+ }
 }
-$('viewProjectedLine').onclick=()=>{if($('lineDetail').classList.contains('hidden'))showProjectedLine();else $('lineDetail').classList.add('hidden')};
-$('closeLineDetail').onclick=()=>$('lineDetail').classList.add('hidden');
+$('viewProjectedLine').onclick=()=>{
+ if($('lineDetail').classList.contains('hidden'))showProjectedLine();
+ else{$('lineDetail').classList.add('hidden');lineViewToken++;}
+};
+$('closeLineDetail').onclick=()=>{$('lineDetail').classList.add('hidden');lineViewToken++};
+$('lineZoom').onclick=()=>{
+ const zoomed=$('lineChart').classList.toggle('zoomed');
+ $('lineZoom').textContent=zoomed?'Fit to screen':'Enlarge / scroll';
+};
