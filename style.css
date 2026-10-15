@@ -26,3 +26,28 @@
 .bid-time-grid strong{display:block;font-size:clamp(21px,5vw,31px);line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.7px;color:#102b4e}
 .bid-time-grid small{display:block;font-size:9px;font-weight:800;color:#75899c;letter-spacing:.35px;margin-top:6px}
 .bid-deadline{margin:12px 0 0;color:#60778d;font-size:12px;text-align:center}
+
+/* Compact UTC countdown beside selected pilot */
+.pilot-bar{align-items:end;gap:12px}
+.pilot-bar label{flex:1 1 55%;min-width:0}
+.pilot-bar select{max-width:none}
+.pilot-bar .bid-countdown{flex:0 1 215px;min-width:0;padding:8px 10px;border-radius:12px;box-shadow:none}
+.pilot-bar .bid-countdown-heading{font-size:9px;letter-spacing:.2px;gap:4px}
+.pilot-bar .bid-utc-tag{font-size:8px;padding:2px 4px}
+.pilot-bar .bid-time-grid{gap:3px;margin-top:6px}
+.pilot-bar .bid-time-grid>div{padding:5px 1px 4px;border-radius:6px}
+.pilot-bar .bid-time-grid strong{font-size:17px;letter-spacing:0}
+.pilot-bar .bid-time-grid small{font-size:7px;margin-top:3px;letter-spacing:0}
+.pilot-bar .bid-deadline{font-size:9px;margin:5px 0 0;line-height:1.25}
+@media(max-width:430px){.pilot-bar{gap:7px}.pilot-bar .bid-countdown{flex-basis:46%;padding:7px 6px}.pilot-bar .bid-countdown-heading{font-size:8px}.pilot-bar .bid-utc-tag{display:none}.pilot-bar .bid-time-grid strong{font-size:15px}.pilot-bar .bid-deadline{font-size:8px}.pilot-bar select{font-size:12px;padding:10px 21px 10px 7px}}
+
+/* On narrow phones, put the compact timer directly under the pilot selector. */
+@media(max-width:540px){
+ .pilot-bar{flex-wrap:wrap;align-items:stretch}
+ .pilot-bar label{flex:1 1 100%}
+ .pilot-bar .bid-countdown{flex:1 1 100%;display:flex;align-items:center;gap:8px;padding:7px 9px}
+ .pilot-bar .bid-countdown-heading{flex:0 0 30%;font-size:9px;line-height:1.35}
+ .pilot-bar .bid-time-grid{flex:1 1 43%;margin-top:0}
+ .pilot-bar .bid-deadline{flex:0 1 24%;margin:0;font-size:9px}
+ .pilot-bar .bid-utc-tag{display:none}
+}
