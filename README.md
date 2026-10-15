@@ -26,3 +26,7 @@ After importing, source files and parsed results are saved in the browser Indexe
 
 ## V5 branding
 Adds the approved Australian aviation SBO logo to the existing header and Home Screen icons. No bidding calculations, saved data, or selection logic changed. Upload all files in this ZIP, including the three new image assets. Existing iPhone Home Screen icons may need to be removed and re-added to update the icon.
+
+
+## V6 iPhone refresh
+Refresh tab opens Kalitta Crew Bidding in Safari. After the user logs in and exports the First Officer View All Excel report, the user selects it from Downloads. The app imports only that report, reusing saved monthly line and exclusion data. iOS/Safari security prevents a GitHub Pages website from silently retrieving authenticated reports or reading Downloads without a user-selected file. The app does not request or store Kalitta credentials. The report remains on-device.

@@ -100,3 +100,27 @@ $('analyze').onclick=async()=>{
 
 $('clearSaved').onclick=async()=>{if(!confirm('Remove saved bidding data and selected pilot from this device?'))return;await dbClear();localStorage.removeItem('sbo-selected-pilot');location.reload()};
 restoreSaved();
+
+// iPhone-friendly refresh flow: open the authenticated portal, then select the
+// downloaded file using the operating system's normal file picker.
+// Browser security prevents silent reading of Safari downloads or portal cookies.
+$('pickLatest').onclick=()=>{$('bidsFile').click()};
+$('bidsFile').addEventListener('change',()=>{
+ const f=$('bidsFile').files[0];
+ $('refreshFileName').textContent=f?`Selected: ${f.name}`:'No report selected';
+ $('refreshUpdate').disabled=!f;
+});
+$('refreshUpdate').onclick=async()=>{
+ if(!$('bidsFile').files[0])return;
+ $('refreshStatus').textContent='Importing latest FO bids…';
+ // Reuse the exact same tested parser, validation and IndexedDB persistence.
+ await $('analyze').onclick();
+ const msg=$('importStatus').textContent;
+ $('refreshStatus').textContent=msg;
+ if(msg.startsWith('Saved locally:')){
+   $('refreshFileName').textContent='No report selected';
+   $('refreshUpdate').disabled=true;
+ }else{
+   document.querySelector('[data-tab="refresh"]').click();
+ }
+};
