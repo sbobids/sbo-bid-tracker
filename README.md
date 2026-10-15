@@ -30,3 +30,7 @@ Adds the approved Australian aviation SBO logo to the existing header and Home S
 
 ## V6 iPhone refresh
 Refresh tab opens Kalitta Crew Bidding in Safari. After the user logs in and exports the First Officer View All Excel report, the user selects it from Downloads. The app imports only that report, reusing saved monthly line and exclusion data. iOS/Safari security prevents a GitHub Pages website from silently retrieving authenticated reports or reading Downloads without a user-selected file. The app does not request or store Kalitta credentials. The report remains on-device.
+
+
+## Projected line schedule (V7 enhancement)
+Home includes View projected line. The app extracts text from the matching line's page of the monthly 777 Lines PDF and saves it locally with the monthly data. PDF text ordering is approximate; confirm operational details against the original PDF. Users with previously saved monthly data must reimport the monthly Lines PDF and Bid List along with the current FO bids export once to populate schedule text.

@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 const defaultChoices=[49,89,66,31,85,75,86,88,76,29,10,19,78,36,57,47,82,8,12,67,7,80,37,72,64,32,53,69,42,1,56,20,24,3,2];
-let state={people:[],capacities:{},details:{},excluded:[],awards:[],selectedName:'',overrides:{}};
+let state={people:[],capacities:{},details:{},schedules:{},excluded:[],awards:[],selectedName:'',overrides:{}};
 $('choices').value='';
 const DB_NAME='sbo-bid-tracker-local-v1', DB_STORE='saved';
 function openDB(){return new Promise((resolve,reject)=>{let req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>req.result.createObjectStore(DB_STORE);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
@@ -39,14 +39,21 @@ function parseBidRows(r){ // The company export uses repeated Name/Choice/Line r
  }
  for(let p of people){p.raw.sort((a,b)=>a.rank-b.rank||a.seq-b.seq);p.bids=[...new Set(p.raw.map(x=>x.n))];delete p.raw}
  return people.filter(x=>x.name.length>3)}
-async function parsePdf(file){if(!window.pdfjsLib)throw Error('PDF library unavailable. Connect to the internet and reload.');pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';let doc=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;let capacities={},details={};
- for(let i=1;i<=doc.numPages;i++){let page=await doc.getPage(i),content=await page.getTextContent(),items=content.items.map(x=>x.str),t=items.join(' ');let id=t.match(/\bF\s*(\d{1,3})\s*[-–]\s*\d+\s*\/\s*(\d+)\b/i);if(!id)continue;let n=Number(id[1]);capacities[n]=Number(id[2]);let credit=t.match(/Credit\s*time\s*:\s*(\d{1,3}:\d{2})/i),days=t.match(/Duty\s*days\s*:\s*(\d+)/i);details[n]={credit:credit?.[1]||'—',duties:days?.[1]||'—'} }
- return {capacities,details}}
+async function parsePdf(file){if(!window.pdfjsLib)throw Error('PDF library unavailable. Connect to the internet and reload.');pdfjsLib.GlobalWorkerOptions.workerSrc='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';let doc=await pdfjsLib.getDocument({data:await file.arrayBuffer()}).promise;let capacities={},details={},schedules={};
+ for(let i=1;i<=doc.numPages;i++){let page=await doc.getPage(i),content=await page.getTextContent(),items=content.items.map(x=>x.str),t=items.join(' ');let id=t.match(/\bF\s*(\d{1,3})\s*[-–]\s*\d+\s*\/\s*(\d+)\b/i);if(!id)continue;let n=Number(id[1]);capacities[n]=Number(id[2]);let credit=t.match(/Credit\s*time\s*:\s*(\d{1,3}:\d{2})/i),days=t.match(/Duty\s*days\s*:\s*(\d+)/i);details[n]={credit:credit?.[1]||'—',duties:days?.[1]||'—'};
+ // Keep a readable, on-device transcription of the corresponding PDF page.
+ // Text coordinates are used to preserve rows and columns as far as PDF extraction permits.
+ const textItems=content.items.filter(x=>x.str&&x.str.trim()).map(x=>({str:x.str.trim(),x:x.transform?.[4]||0,y:x.transform?.[5]||0}));
+ const lines=[];for(const item of textItems){let row=lines.find(r=>Math.abs(r.y-item.y)<3);if(!row){row={y:item.y,items:[]};lines.push(row)}row.items.push(item)}
+ lines.sort((a,b)=>b.y-a.y);
+ schedules[n]=lines.map(r=>{let prev=null;return r.items.sort((a,b)=>a.x-b.x).map(it=>{let gap=prev?Math.max(1,Math.min(12,Math.round((it.x-prev.x)/9)-Math.ceil(prev.str.length/2))):0;prev=it;return ' '.repeat(gap)+it.str}).join('').trimEnd()}).join('\n');
+ }
+ return {capacities,details,schedules}}
 function simulate(){let left={...state.capacities},awards=[];for(let i=0;i<state.people.length;i++){let p=state.people[i],exc=state.excluded.find(e=>match(e.name,p.name)),bids=state.overrides[p.name]||p.bids,got=null,rank=null;
  if(!exc)for(let j=0;j<bids.length;j++){let n=bids[j];if(left[n]>0){got=n;rank=j+1;left[n]--;break}}
  awards.push({name:p.name,seniority:i+1,line:got,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length})}
  state.awards=awards;render()}
-function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots()}
+function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots()}
 function renderPilots(){let q=$('search').value.trim().toLowerCase(),list=state.awards.filter(p=>!q||p.name.toLowerCase().includes(q)||('f'+p.line).toLowerCase()===q);$('pilotList').replaceChildren(...list.map(p=>{let d=document.createElement('div');d.className='pilot';let a=document.createElement('div'),b=document.createElement('b'),sm=document.createElement('small');a.textContent=`${p.seniority}. ${p.name}`;sm.textContent=p.excluded?p.excluded:p.blank?'No bid submitted':p.line?`Choice #${p.rank}`:'No available submitted choice';a.append(sm);b.textContent=p.excluded?'Excluded':p.line?'F'+p.line:'—';d.append(a,b);return d}))}
 $('search').oninput=renderPilots;
 function selectPilot(name){
@@ -78,19 +85,19 @@ $('analyze').onclick=async()=>{
    status.textContent='Reading updated FO bids…';
    const people=parseBidRows(rows(await excel(bf),'Sheet1'));
    if(people.length<30)throw Error(`Only ${people.length} pilots identified in the bid report. Please check the export format.`);
-   let capacities,details,excluded;
+   let capacities,details,excluded,schedules;
    if(pf&&rf){
      status.textContent='Reading new monthly lines and exclusions…';
      const pdf=await parsePdf(pf);
-     capacities=pdf.capacities;details=pdf.details;
+     capacities=pdf.capacities;details=pdf.details;schedules=pdf.schedules;
      excluded=parseRoster(await excel(rf));
      if(Object.keys(capacities).length<40)throw Error(`Only ${Object.keys(capacities).length} lines identified in PDF.`);
    }else{
-     capacities={...base.capacities};details={...base.details};excluded=base.excluded;
+     capacities={...base.capacities};details={...base.details};schedules={...(base.schedules||{})};excluded=base.excluded;
    }
    for(const m of $('capacities').value.matchAll(/F?\\s*(\\d+)\\s*=\\s*(\\d+)/gi))capacities[Number(m[1])]=Number(m[2]);
    const updatedAt=new Date().toISOString();
-   const next={people,capacities,details,excluded,overrides:{},updatedAt};
+   const next={people,capacities,details,schedules,excluded,overrides:{},updatedAt};
    // Save first, then update the live display, so a failed write cannot masquerade as success.
    await dbPut('parsed',next);
    state={...state,...next};
@@ -128,3 +135,16 @@ $('refreshUpdate').onclick=async()=>{
    document.querySelector('[data-tab="refresh"]').click();
  }
 };
+
+// View the selected pilot's projected line from the locally imported 777 Lines PDF.
+function showProjectedLine(){
+ const me=state.awards.find(p=>p.name===state.selectedName);
+ if(!me?.line){$('lineDetail').classList.add('hidden');return}
+ $('lineDetailTitle').textContent='Projected line F'+me.line;
+ const schedule=state.schedules?.[me.line];
+ $('lineDetailMessage').textContent=schedule?'Schedule text extracted from the monthly 777 Lines PDF. Check the original PDF for exact formatting and trip details.':'Schedule details were not saved by your previous app version. Reimport the monthly 777 Lines PDF and Bid List together with a current FO bids export in Settings to enable this view.';
+ $('lineSchedule').textContent=schedule||'';
+ $('lineDetail').classList.remove('hidden');
+}
+$('viewProjectedLine').onclick=()=>{if($('lineDetail').classList.contains('hidden'))showProjectedLine();else $('lineDetail').classList.add('hidden')};
+$('closeLineDetail').onclick=()=>$('lineDetail').classList.add('hidden');
