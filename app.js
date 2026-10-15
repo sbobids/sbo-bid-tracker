@@ -11,6 +11,10 @@ function populatePilots(){const sel=$('pilotSelect');sel.replaceChildren(new Opt
 async function restoreSaved(){try{const saved=await dbGet('parsed');if(saved&&Array.isArray(saved.people)&&saved.people.length){state={...state,...saved,awards:[]};populatePilots();simulate();$('lastUpdated').textContent=saved.updatedAt?'Last imported: '+new Date(saved.updatedAt).toLocaleString():'Saved data restored (import date unknown)';$('importStatus').textContent='Saved bidding data restored. To update bids, select only the View All FO Bids file.'}else{$('importStatus').textContent='No saved bidding data on this device yet.'}}catch(e){$('importStatus').textContent='Local storage unavailable: '+e.message}}
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('hidden',x.id!==b.dataset.tab))});
+$('openFiles').onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('hidden',x.id!=='files'));window.scrollTo(0,0)};
+$('backHome').onclick=()=>document.querySelector('[data-tab="home"]').click();
+$('homeRefresh').onclick=()=>document.querySelector('[data-tab="refresh"]').click();
+
 function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').trim().split(/\s+/).filter(Boolean).sort().join(' ')}
 function match(a,b){let x=norm(a).split(' '),y=norm(b).split(' ');return x.length>=2&&y.length>=2&&x.filter(t=>y.includes(t)).length>=2}
 function parseNums(s){return [...new Set((String(s||'').match(/(?:F\s*)?\d+/gi)||[]).map(x=>Number(x.replace(/[^0-9]/g,''))).filter(x=>x>0&&x<500))]}
