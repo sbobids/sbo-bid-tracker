@@ -22,3 +22,4 @@ This is a **static**, browser-based prototype. It does not contact the Kalitta w
 
 ## V3: Device persistence
 After importing, source files and parsed results are saved in the browser IndexedDB. The selected pilot is stored in localStorage. This does not sync across devices, and private browsing or clearing website data can erase it. Each pilot should only import company data if authorized. Use the Clear saved data button on shared devices.
+\n\n## V4 updates\nOnly the View All FO Bids export is required after the first import. The saved 777 PDF-derived line capacities/details and the monthly Bid List-derived FO CQ/Vacation exclusions are reused. For a new month, upload both monthly source files together plus the latest bids export. Each device maintains its own saved data.\n
