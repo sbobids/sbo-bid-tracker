@@ -251,3 +251,6 @@ function updateBidCountdown(){
 updateBidCountdown();
 setInterval(updateBidCountdown,10000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateBidCountdown()});
+// Start the bid countdown automatically
+updateBidCountdown();
+setInterval(updateBidCountdown, 30000);
