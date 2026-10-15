@@ -16,3 +16,13 @@
 .flying-with-pilot small{display:block;color:#718497;font-size:11px;margin-top:3px}
 .flying-with-line{font-weight:800;color:#173d67;white-space:nowrap}
 .flying-with-empty{background:#f4f7fb;border-radius:12px;padding:13px;color:#687b8c;font-size:13px}
+
+/* Monthly bid deadline, fixed at 16th 21:00 UTC regardless of local timezone. */
+.bid-countdown{background:#fff;border:1px solid #dce7f2;border-radius:17px;padding:16px 18px;box-shadow:0 2px 12px #14263b08}
+.bid-countdown-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px;letter-spacing:.8px;font-weight:850;color:#294968}
+.bid-utc-tag{font-size:10px;white-space:nowrap;background:#eaf1fa;color:#173d66;border-radius:30px;padding:5px 8px}
+.bid-time-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:13px}
+.bid-time-grid>div{background:#f1f5fa;border-radius:11px;padding:11px 3px 9px;text-align:center}
+.bid-time-grid strong{display:block;font-size:clamp(21px,5vw,31px);line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.7px;color:#102b4e}
+.bid-time-grid small{display:block;font-size:9px;font-weight:800;color:#75899c;letter-spacing:.35px;margin-top:6px}
+.bid-deadline{margin:12px 0 0;color:#60778d;font-size:12px;text-align:center}

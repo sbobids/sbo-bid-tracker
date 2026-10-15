@@ -229,3 +229,25 @@ $('lineZoom').onclick=()=>{
  const zoomed=$('lineChart').classList.toggle('zoomed');
  $('lineZoom').textContent=zoomed?'Fit to screen':'Enlarge / scroll';
 };
+
+// All dates are UTC. At/after 21:00Z on the 16th, count down to next month.
+function nextBidDeadline(now){
+  let year=now.getUTCFullYear(), month=now.getUTCMonth();
+  let deadline=Date.UTC(year,month,16,21,0,0);
+  if(now.getTime()>=deadline) deadline=Date.UTC(year,month+1,16,21,0,0);
+  return deadline;
+}
+function updateBidCountdown(){
+  const now=new Date(), deadline=nextBidDeadline(now);
+  let remaining=Math.max(0,Math.ceil((deadline-now.getTime())/1000));
+  const days=Math.floor(remaining/86400); remaining%=86400;
+  const hours=Math.floor(remaining/3600); remaining%=3600;
+  const minutes=Math.floor(remaining/60);
+  $('bidDays').textContent=String(days).padStart(2,'0');
+  $('bidHours').textContent=String(hours).padStart(2,'0');
+  $('bidMinutes').textContent=String(minutes).padStart(2,'0');
+  $('bidDeadline').textContent='Closes '+new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'}).format(new Date(deadline))+' at 21:00 UTC';
+}
+updateBidCountdown();
+setInterval(updateBidCountdown,10000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateBidCountdown()});
