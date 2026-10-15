@@ -2,6 +2,14 @@ const $=id=>document.getElementById(id);
 const defaultChoices=[49,89,66,31,85,75,86,88,76,29,10,19,78,36,57,47,82,8,12,67,7,80,37,72,64,32,53,69,42,1,56,20,24,3,2];
 let state={people:[],capacities:{},details:{},excluded:[],awards:[],selectedName:'',overrides:{}};
 $('choices').value='';
+const DB_NAME='sbo-bid-tracker-local-v1', DB_STORE='saved';
+function openDB(){return new Promise((resolve,reject)=>{let req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>req.result.createObjectStore(DB_STORE);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
+async function dbPut(key,value){let db=await openDB();try{await new Promise((resolve,reject)=>{let tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}}
+async function dbGet(key){let db=await openDB();try{return await new Promise((resolve,reject)=>{let req=db.transaction(DB_STORE).objectStore(DB_STORE).get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}finally{db.close()}}
+async function dbClear(){let db=await openDB();try{await new Promise((resolve,reject)=>{let tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}}
+function populatePilots(){const sel=$('pilotSelect');sel.replaceChildren(new Option('Choose your name…',''),...state.people.map(p=>new Option(p.name,p.name)));const previous=localStorage.getItem('sbo-selected-pilot')||'';const name=state.people.some(p=>p.name===previous)?previous:'';sel.value=name;selectPilot(name)}
+async function restoreSaved(){try{const saved=await dbGet('parsed');if(saved&&Array.isArray(saved.people)&&saved.people.length){state={...state,...saved,awards:[]};populatePilots();simulate();$('importStatus').textContent='Saved bidding data restored from this device. Import new files to refresh.'}else{$('importStatus').textContent='No saved bidding data on this device yet.'}}catch(e){$('importStatus').textContent='Local storage unavailable: '+e.message}}
+
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('hidden',x.id!==b.dataset.tab))});
 function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').trim().split(/\s+/).filter(Boolean).sort().join(' ')}
 function match(a,b){let x=norm(a).split(' '),y=norm(b).split(' ');return x.length>=2&&y.length>=2&&x.filter(t=>y.includes(t)).length>=2}
@@ -39,6 +47,7 @@ function renderPilots(){let q=$('search').value.trim().toLowerCase(),list=state.
 $('search').oninput=renderPilots;
 function selectPilot(name){
  state.selectedName=name;
+ if(name)localStorage.setItem('sbo-selected-pilot',name);else if(state.people.length)localStorage.removeItem('sbo-selected-pilot');
  const pilot=state.people.find(p=>p.name===name);
  $('choices').value=(pilot?(state.overrides[name]||pilot.bids):[]).map(n=>'F'+n).join('\n');
  $('prefMsg').textContent=pilot?'Imported bids shown. Changes are what-if only.':'';
@@ -52,4 +61,9 @@ $('saveChoices').onclick=()=>{
  $('prefMsg').textContent=`Applied ${n.length} what-if choices for ${state.selectedName}. This does not submit bids.`;
  simulate();
 };
-$('analyze').onclick=async()=>{let status=$('importStatus');try{let pf=$('linesFile').files[0],rf=$('rosterFile').files[0],bf=$('bidsFile').files[0];if(!pf||!rf||!bf)throw Error('Please select all three files.');status.textContent='Reading line PDF…';let pdf=await parsePdf(pf);status.textContent='Reading FO CQ / Vacation…';let excluded=parseRoster(await excel(rf));status.textContent='Reading submitted FO bids…';let people=parseBidRows(rows(await excel(bf),'Sheet1'));let overrides=$('capacities').value.matchAll(/F?\s*(\d+)\s*=\s*(\d+)/gi);for(let m of overrides)pdf.capacities[Number(m[1])]=Number(m[2]);if(Object.keys(pdf.capacities).length<40)throw Error(`Only ${Object.keys(pdf.capacities).length} lines were identified in the PDF. Please check the PDF format.`);if(people.length<30)throw Error(`Only ${people.length} pilots identified in the bid report. Please check the export format.`);state={...state,...pdf,excluded,people,overrides:{}};const sel=$('pilotSelect');sel.replaceChildren(new Option('Choose your name…',''),...people.map(p=>new Option(p.name,p.name)));selectPilot('');simulate();status.textContent=`Ready: ${people.length} pilots, ${Object.keys(pdf.capacities).length} lines, ${excluded.length} CQ/Vacation entries. No files uploaded to a server.`;document.querySelector('[data-tab="home"]').click()}catch(e){status.textContent='Import error: '+e.message;console.error(e)}};
+$('analyze').onclick=async()=>{let status=$('importStatus');try{let pf=$('linesFile').files[0],rf=$('rosterFile').files[0],bf=$('bidsFile').files[0];if(!pf||!rf||!bf)throw Error('Please select all three files.');status.textContent='Reading line PDF…';let pdf=await parsePdf(pf);status.textContent='Reading FO CQ / Vacation…';let excluded=parseRoster(await excel(rf));status.textContent='Reading submitted FO bids…';let people=parseBidRows(rows(await excel(bf),'Sheet1'));let overrides=$('capacities').value.matchAll(/F?\s*(\d+)\s*=\s*(\d+)/gi);for(let m of overrides)pdf.capacities[Number(m[1])]=Number(m[2]);if(Object.keys(pdf.capacities).length<40)throw Error(`Only ${Object.keys(pdf.capacities).length} lines were identified in the PDF. Please check the PDF format.`);if(people.length<30)throw Error(`Only ${people.length} pilots identified in the bid report. Please check the export format.`);state={...state,...pdf,excluded,people,overrides:{}};populatePilots();simulate();
+ try{await dbPut('parsed',{people,capacities:pdf.capacities,details:pdf.details,excluded,overrides:{}});await dbPut('sourceFiles',{pdf:pf,roster:rf,bids:bf});}
+ catch(storageError){status.textContent='Projection calculated, but saving failed: '+storageError.message+'. ';console.warn(storageError)}status.textContent=`Ready: ${people.length} pilots, ${Object.keys(pdf.capacities).length} lines, ${excluded.length} CQ/Vacation entries. No files uploaded to a server.`;document.querySelector('[data-tab="home"]').click()}catch(e){status.textContent='Import error: '+e.message;console.error(e)}};
+
+$('clearSaved').onclick=async()=>{if(!confirm('Remove saved bidding data and selected pilot from this device?'))return;await dbClear();localStorage.removeItem('sbo-selected-pilot');location.reload()};
+restoreSaved();

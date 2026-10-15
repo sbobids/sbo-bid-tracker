@@ -18,3 +18,7 @@ This is a **static**, browser-based prototype. It does not contact the Kalitta w
 - The files are **not saved or synchronized**; re-import after a page refresh or on another device. Never upload company data to the GitHub repository.
 - Github Pages is public hosting. It hosts the app **code only**, not any crew data. The site is not password protected. Ask your employer before processing or displaying other pilots' information on personal devices.
 - Requires an internet connection to load Excel and PDF libraries from CDN. It has no automated company website downloads.
+
+
+## V3: Device persistence
+After importing, source files and parsed results are saved in the browser IndexedDB. The selected pilot is stored in localStorage. This does not sync across devices, and private browsing or clearing website data can erase it. Each pilot should only import company data if authorized. Use the Clear saved data button on shared devices.
