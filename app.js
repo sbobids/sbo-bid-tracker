@@ -102,7 +102,21 @@ async function excel(file){if(!window.XLSX)throw Error('Excel library unavailabl
 function parseRoster(wb){let r=rows(wb,'777');if(!wb.Sheets['777'])throw Error('777 worksheet not found in monthly Bid List.');let header=r.slice(0,30).flatMap((row,i)=>row.map((v,j)=>({v:String(v).toUpperCase().trim(),i,j})));let exclusions=[];
  for(let [label,reason] of (position==='CA'?[['CA CQ SCHEDULED','CA CQ'],['VAC CA','CA Vacation']]:[['FO CQ SCHEDULED','FO CQ'],['VAC FO','FO Vacation']])){let h=header.find(x=>x.v===label);if(!h)throw Error('Missing '+label+' column in 777 worksheet');for(let i=h.i+1;i<r.length;i++){let val=r[i]?.[h.j];if(typeof val!=='string'||!val.trim())break;exclusions.push({name:val.trim(),reason})}}
  return exclusions}
-function parseBidRows(r){ // The company export uses repeated Name/Choice/Line rows; preserve displayed order.
+function resolveImportedLine(value, capacities){
+ // The company's ViewAllBids export stores line IDs as bare numbers (e.g. 98),
+ // while the monthly PDF identifies the same line as Q98 or F98.
+ const raw=String(value??'').trim();
+ const m=raw.match(/^([FQ])?\s*(\d{1,3})(?:\.0+)?$/i);
+ if(!m||Number(m[2])<1)return null;
+ const n=Number(m[2]), explicit=m[1]?.toUpperCase();
+ if(explicit)return explicit+n;
+ const f='F'+n,q='Q'+n;
+ if(Object.hasOwn(capacities,q)&&!Object.hasOwn(capacities,f))return q;
+ if(Object.hasOwn(capacities,f))return f;
+ if(Object.hasOwn(capacities,q))return q;
+ return null;
+}
+function parseBidRows(r,capacities){ // Preserve displayed bid order and resolve numeric IDs against PDF.
  let hIndex=r.findIndex(row=>row.some(v=>/^name$/i.test(String(v).trim()))&&row.some(v=>/^line$/i.test(String(v).trim())));
  if(hIndex<0)throw Error('Could not find Name / Choice / Line headings in exported bids.');
  let h=r[hIndex].map(x=>String(x).trim().toLowerCase()),nameCol=h.indexOf('name'),choiceCol=h.indexOf('choice'),lineCol=h.indexOf('line');
@@ -114,7 +128,7 @@ function parseBidRows(r){ // The company export uses repeated Name/Choice/Line r
      if(!current||!match(current.name,name)){current={name,bids:[],raw:[]};people.push(current)}
    }
    if(!current)continue;
-   let ln=line.match(/\b([FQ])\s*(\d{1,3})\b/i);if(ln&&Number(ln[2])>0){let n=ln[1].toUpperCase()+Number(ln[2]);let rank=Number(choice.replace(/\D/g,''));current.raw.push({n,rank:Number.isFinite(rank)?rank:9999,seq:i})}
+   let n=resolveImportedLine(line,capacities);if(n){let rank=Number(choice.replace(/\D/g,''));current.raw.push({n,rank:Number.isFinite(rank)?rank:9999,seq:i})}
  }
  for(let p of people){p.raw.sort((a,b)=>a.rank-b.rank||a.seq-b.seq);p.bids=[...new Set(p.raw.map(x=>x.n))];delete p.raw}
  return people.filter(x=>x.name.length>3)}
@@ -221,7 +235,7 @@ async function importBids(){
   status.textContent='Reading '+(pos==='CA'?'Captain':'First Officer')+' bids…';
   const report=await excel(selected[pos]);
    const reportSheet=report.SheetNames.find(n=>/^ViewAllBids$/i.test(n))||report.SheetNames[0];
-   const people=parseBidRows(rows(report,reportSheet));
+   const people=parseBidRows(rows(report,reportSheet),capacities);
   if(people.length<30)throw Error('Only '+people.length+' '+pos+' pilots found. Verify the '+pos+' export.');
   pending[pos]={people,excluded:exclusions[pos]||[],overrides:{},updatedAt:new Date().toISOString(),selectedName:groups[pos].selectedName||''};
  }
