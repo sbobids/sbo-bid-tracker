@@ -147,7 +147,7 @@ function recalculateOtherGroup(){
  }
  g.awards=awards;
 }
-function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots();renderCrew()}
+function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots();renderCrew();renderMyBid()}
 function renderCrew(){
  const summary=$('crewSummary'),members=$('crewMembers');members.replaceChildren();
  const me=state.awards.find(p=>p.name===state.selectedName);
@@ -325,3 +325,53 @@ function updateBidCountdown(){
 }
 updateBidCountdown();
 setInterval(updateBidCountdown,30000);
+
+
+// My Bid: availability at the selected pilot's turn, after senior pilots take their projected lines.
+// These are conditional alternatives, not simultaneous awards or guaranteed future outcomes.
+function renderMyBid(){
+ const pilot=state.people.find(p=>p.name===state.selectedName), me=state.awards.find(a=>a.name===state.selectedName);
+ const list=$('myBidLines');list.replaceChildren();
+ $('myBidPilot').textContent=pilot?pilot.name+' · 777 '+position:'Select a pilot on Home to see their bid outlook.';
+ $('myBidAward').textContent=me?.line?'F'+me.line:'—';
+ $('myBidAwardBadge').textContent=me?.excluded?'Excluded':me?.line?'Currently projected':'No projected line';
+ $('myBidAwardDetail').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Based on current imported bids and seniority':'Import bids and select a pilot to calculate your outlook.';
+ $('myBidRank').textContent=me?.rank?'#'+me.rank:'—';
+ $('myBidCapacity').textContent=me?.line?String(state.capacities[me.line]??'—'):'—';
+ const senior=me?state.awards.slice(0,me.seniority-1):[];
+ const blankCount=senior.filter(a=>a.blank&&!a.excluded).length;
+ $('myBidBlanks').textContent=me?String(blankCount):'—';
+ $('myBidNext').textContent='—';$('myBidNextRank').textContent='';
+ $('myBidNextNote').textContent='Your next currently open preference will appear here.';
+ $('myBidCount').textContent='';
+ if(!pilot||!me){const msg=document.createElement('p');msg.className='muted';msg.textContent='Select a pilot on Home to see their ranked choices.';list.append(msg);return}
+ const bids=state.overrides[pilot.name]||pilot.bids;
+ if(!bids.length){const msg=document.createElement('p');msg.className='muted';msg.textContent='No ranked choices found for this pilot.';list.append(msg);return}
+ const remaining={...state.capacities};
+ for(const a of senior)if(a.line!=null&&remaining[a.line]!=null)remaining[a.line]=Math.max(0,remaining[a.line]-1);
+ const nextIndex=me.line?bids.findIndex((line,i)=>i>=me.rank&&remaining[line]>0):-1;
+ if(nextIndex>=0){$('myBidNext').textContent='F'+bids[nextIndex];$('myBidNextRank').textContent='Choice #'+(nextIndex+1);$('myBidNextNote').textContent='Currently open after senior pilots are assigned. This is a conditional alternative, not a guaranteed award.'}
+ else $('myBidNextNote').textContent=me.line?'No later choice is currently open after senior pilots are assigned.':'No available choice in the current projection.';
+ $('myBidCount').textContent=bids.length+' choices';
+ for(let i=0;i<bids.length;i++){
+  const line=bids[i],cap=state.capacities[line],remainingSlots=remaining[line]||0;
+  const available=remainingSlots>0,projected=me.line===line&&me.rank===i+1;
+  const holders=senior.filter(a=>a.line===line);
+  const item=document.createElement('details');item.className='mybid-line';
+  const summary=document.createElement('summary');
+  const order=document.createElement('span');order.className='mybid-order';order.textContent=i+1;
+  const info=document.createElement('span');info.className='mybid-line-info';
+  const title=document.createElement('b');title.textContent='F'+line;
+  const sub=document.createElement('small');sub.textContent=cap==null?'Capacity unavailable':cap+' '+position+' position'+(cap===1?'':'s')+' · '+remainingSlots+' remaining';
+  info.append(title,sub);
+  const badge=document.createElement('span');badge.className='bid-pill '+(available?'bid-yes':'bid-no');badge.textContent=projected?'Projected award':available?'Can hold':'Cannot hold';
+  summary.append(order,info,badge);item.append(summary);
+  const explanation=document.createElement('div');explanation.className='mybid-explanation';
+  const description=document.createElement('p');description.textContent=cap==null?'No capacity was found for this line in the imported PDF.':available?'A position remains after currently submitted senior bids are simulated.':holders.length?'All positions are currently occupied by projected senior pilots.':'No position is available under the imported capacity data.';
+  explanation.append(description);
+  if(holders.length){const heading=document.createElement('small');heading.textContent='Projected senior holders:';explanation.append(heading);const ul=document.createElement('ul');for(const h of holders){const li=document.createElement('li');li.textContent=h.name+' · seniority #'+h.seniority;ul.append(li)}explanation.append(ul)}
+  if(projected){const note=document.createElement('small');note.textContent='This is your first available preference in the current projection.';explanation.append(note)}
+  item.append(explanation);list.append(item);
+ }
+ if(blankCount){const note=document.createElement('p');note.className='muted mybid-warning';note.textContent=blankCount+' eligible senior pilot(s) have blank bids. They may change which lines you can hold.';list.append(note)}
+}
