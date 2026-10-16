@@ -6,6 +6,23 @@ let position=localStorage.getItem('sbo-position')==='CA'?'CA':'FO';
 let state={...emptyGroup(),capacities:{},details:{},pageMap:{}};
 const groupKey=pos=>'parsed-'+pos;
 function stashGroup(){groups[position]={people:state.people,excluded:state.excluded,awards:state.awards,selectedName:state.selectedName,overrides:state.overrides,updatedAt:state.updatedAt}}
+// Age of the most recently imported bid report for the currently selected position.
+// The timestamp is saved in IndexedDB with the parsed bids, so it survives reloads.
+function updateBidDataAge(){
+ const el=$('bidDataAge');if(!el)return;
+ const timestamp=groups[position]?.updatedAt;
+ const date=timestamp?new Date(timestamp):null;
+ if(!date||!Number.isFinite(date.getTime())){
+  el.textContent='Bid data: Not imported';el.classList.remove('stale');el.title='No '+position+' bid report has been imported';return;
+ }
+ const minutes=Math.max(0,Math.floor((Date.now()-date.getTime())/60000));
+ const age=minutes<1?'Just imported':minutes<60?minutes+'m old':minutes<1440?Math.floor(minutes/60)+'h '+(minutes%60)+'m old':Math.floor(minutes/1440)+'d '+Math.floor((minutes%1440)/60)+'h old';
+ el.textContent='Bid data: '+age;
+ el.classList.toggle('stale',minutes>=1440);
+ el.title=position+' bid report last imported '+date.toLocaleString();
+}
+setInterval(updateBidDataAge,60000);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateBidDataAge()});
 function setPosition(pos){
  if(pos!==position)stashGroup();
  position=pos;localStorage.setItem('sbo-position',pos);
@@ -19,6 +36,7 @@ function setPosition(pos){
 
  $('homePilotSearch').placeholder='Search '+(pos==='CA'?'Captain':'First Officer')+' name…';
  updateRefreshFiles();
+ updateBidDataAge();
  $('lastUpdated').textContent=g.updatedAt?'Last imported: '+new Date(g.updatedAt).toLocaleString():'No '+pos+' bids imported yet';
  $('importStatus').textContent=g.people.length?pos+' bids loaded.':'Import the '+pos+' bids report to get started.';
  $('lineDetail').classList.add('hidden');
