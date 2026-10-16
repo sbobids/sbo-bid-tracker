@@ -175,7 +175,7 @@ function renderCrew(){
  if(!me?.line){summary.textContent='Select a pilot with a projected line to see everyone projected to hold it.';return}
  const line=me.line;
  const all=['CA','FO'].flatMap(pos=>(groups[pos].awards||[]).filter(p=>p.line===line).map(p=>({...p,position:pos})));
- summary.textContent='All pilots currently projected to hold F'+line+' ('+all.length+' total)';
+ summary.textContent='All pilots currently projected to hold '+line+' ('+all.length+' total)';
  for(const pos of ['CA','FO']){
   const heading=document.createElement('h4');heading.textContent=pos==='CA'?'777 Captains':'777 First Officers';members.append(heading);
   const matches=all.filter(p=>p.position===pos);
@@ -371,7 +371,9 @@ setInterval(updateBidCountdown,30000);
 function renderMyBid(){
  const pilot=state.people.find(p=>p.name===state.selectedName), me=state.awards.find(a=>a.name===state.selectedName);
  moveLineViewerHome();$('lineDetail').classList.add('hidden');lineViewToken++;
- const list=$('myBidLines');list.replaceChildren();
+ const list=$('myBidLines');
+ if($('lineDetail').parentElement!==$('home')){lineViewToken++;moveLineViewerHome();$('lineDetail').classList.add('hidden')}
+ list.replaceChildren();
  $('myBidPilot').textContent=pilot?pilot.name+' · 777 '+position:'Select a pilot on Home to see their bid outlook.';
  $('myBidAward').textContent=me?.line?me.line:'—';
  $('myBidAwardBadge').textContent=me?.excluded?'Excluded':me?.line?(me.cq?'CQ projected':'Currently projected'):'No projected line';
@@ -407,7 +409,7 @@ function renderMyBid(){
   const badge=document.createElement('span');badge.className='bid-pill '+(available?'bid-yes':'bid-no');badge.textContent=projected?'Projected award':available?'Can hold':'Cannot hold';
   summary.append(order,info,badge);item.append(summary);
  summary.title='View original PDF chart for '+line;
- summary.addEventListener('click',()=>{if(item.open)openMyBidLineChart(line,item);else if($('lineDetail').parentElement===item){$('lineDetail').classList.add('hidden');lineViewToken++;moveLineViewerHome()}});
+ item.addEventListener('toggle',()=>{if(item.open){openMyBidLineChart(line,item)}else if($('lineDetail').parentElement===item){$('lineDetail').classList.add('hidden');lineViewToken++;moveLineViewerHome()}});
   const explanation=document.createElement('div');explanation.className='mybid-explanation';
   const description=document.createElement('p');description.textContent=!line.startsWith(me.cq?'Q':'F')?'This line is not eligible for this pilot’s CQ status.':cap==null?'No capacity was found for this line in the imported PDF.':available?'A position remains after currently submitted senior bids are simulated.':holders.length?'All positions are currently occupied by projected senior pilots.':'No position is available under the imported capacity data.';
   explanation.append(description);
