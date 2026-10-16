@@ -1,6 +1,32 @@
 const $=id=>document.getElementById(id);
 const defaultChoices=[49,89,66,31,85,75,86,88,76,29,10,19,78,36,57,47,82,8,12,67,7,80,37,72,64,32,53,69,42,1,56,20,24,3,2];
-let state={people:[],capacities:{},details:{},pageMap:{},excluded:[],awards:[],selectedName:'',overrides:{}};
+const emptyGroup=()=>({people:[],excluded:[],awards:[],selectedName:'',overrides:{},updatedAt:null});
+let groups={FO:emptyGroup(),CA:emptyGroup()};
+let position=localStorage.getItem('sbo-position')==='CA'?'CA':'FO';
+let state={...emptyGroup(),capacities:{},details:{},pageMap:{}};
+const groupKey=pos=>'parsed-'+pos;
+function stashGroup(){groups[position]={people:state.people,excluded:state.excluded,awards:state.awards,selectedName:state.selectedName,overrides:state.overrides,updatedAt:state.updatedAt}}
+function setPosition(pos){
+ if(pos!==position)stashGroup();
+ position=pos;localStorage.setItem('sbo-position',pos);
+ const g=groups[pos];Object.assign(state,g);
+ $('positionFO').classList.toggle('active',pos==='FO');$('positionCA').classList.toggle('active',pos==='CA');
+ $('positionLabel').textContent='777 '+pos;
+ $('portalInstructions').textContent='Sign in with Safari, then go to Reports → View Other Bids → '+(pos==='CA'?'Captain':'First Officer')+' Bids → View All → Excel → Export.';
+ $('eligibleLabel').textContent='Eligible 777 '+(pos==='CA'?'Captains':'FOs');
+ $('refreshTitle').textContent='Refresh '+(pos==='CA'?'Captain':'FO')+' bids';
+ $('pickLatest').textContent='Choose downloaded '+(pos==='CA'?'Captain':'FO')+' bids';
+ $('bidsLabel').textContent='View All '+(pos==='CA'?'Captain':'FO')+' Bids export (.xls/.xlsx) (every update)';
+ $('homePilotSearch').placeholder='Search '+(pos==='CA'?'Captain':'First Officer')+' name…';
+ $('bidsFile').value='';$('refreshFileName').textContent='No report selected';$('refreshUpdate').disabled=true;
+ $('lastUpdated').textContent=g.updatedAt?'Last imported: '+new Date(g.updatedAt).toLocaleString():'No '+pos+' bids imported yet';
+ $('importStatus').textContent=g.people.length?pos+' bids loaded.':'Import the '+pos+' bids report to get started.';
+ $('lineDetail').classList.add('hidden');
+ $('search').value='';$('choices').value='';
+ populatePilots();simulate();
+}
+$('positionFO').onclick=()=>setPosition('FO');
+$('positionCA').onclick=()=>setPosition('CA');
 $('choices').value='';
 const DB_NAME='sbo-bid-tracker-local-v1', DB_STORE='saved';
 function openDB(){return new Promise((resolve,reject)=>{let req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>req.result.createObjectStore(DB_STORE);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
@@ -8,7 +34,7 @@ async function dbPut(key,value){let db=await openDB();try{await new Promise((res
 async function dbGet(key){let db=await openDB();try{return await new Promise((resolve,reject)=>{let req=db.transaction(DB_STORE).objectStore(DB_STORE).get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}finally{db.close()}}
 async function dbClear(){let db=await openDB();try{await new Promise((resolve,reject)=>{let tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}}
 function populatePilots(){
- const previous=state.selectedName||localStorage.getItem('sbo-selected-pilot')||'';
+ const previous=state.selectedName||localStorage.getItem('sbo-selected-pilot-'+position)||localStorage.getItem('sbo-selected-pilot')||'';
  const name=state.people.some(p=>p.name===previous)?previous:'';
  selectPilot(name);
 }
@@ -46,8 +72,19 @@ document.addEventListener('pointerdown',e=>{
  if(!e.target.closest('.pilot-search-wrap'))hideHomePilotResults();
 });
 
-async function restoreSaved(){try{const saved=await dbGet('parsed');if(saved&&Array.isArray(saved.people)&&saved.people.length){state={...state,...saved,awards:[]};populatePilots();simulate();$('lastUpdated').textContent=saved.updatedAt?'Last imported: '+new Date(saved.updatedAt).toLocaleString():'Saved data restored (import date unknown)';$('importStatus').textContent='Saved bidding data restored. To update bids, select only the View All FO Bids file.'}else{$('importStatus').textContent='No saved bidding data on this device yet.'}}catch(e){$('importStatus').textContent='Local storage unavailable: '+e.message}}
-
+async function restoreSaved(){
+ try{
+  const legacy=await dbGet('parsed'),monthly=await dbGet('monthly');
+  const savedFO=await dbGet(groupKey('FO')),savedCA=await dbGet(groupKey('CA'));
+  const shared=monthly||legacy||{};
+  state.capacities=shared.capacities||{};state.details=shared.details||{};state.pageMap=shared.pageMap||{};
+  for(const pos of ['FO','CA']){
+   const saved=pos==='FO'?(savedFO||legacy):savedCA;
+   if(saved?.people?.length)groups[pos]={...emptyGroup(),...saved,awards:[],selectedName:localStorage.getItem('sbo-selected-pilot-'+pos)||saved.selectedName||''};
+  }
+  setPosition(position);
+ }catch(e){$('importStatus').textContent='Local storage unavailable: '+e.message}
+}
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('hidden',x.id!==b.dataset.tab))});
 $('openFiles').onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active'));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('hidden',x.id!=='files'));window.scrollTo(0,0)};
 $('backHome').onclick=()=>document.querySelector('[data-tab="home"]').click();
@@ -59,7 +96,7 @@ function parseNums(s){return [...new Set((String(s||'').match(/(?:F\s*)?\d+/gi)|
 function rows(wb,name){let sh=wb.Sheets[name]||wb.Sheets[wb.SheetNames[0]];return XLSX.utils.sheet_to_json(sh,{header:1,defval:''})}
 async function excel(file){if(!window.XLSX)throw Error('Excel library unavailable. Connect to the internet and reload.');return XLSX.read(await file.arrayBuffer(),{type:'array'})}
 function parseRoster(wb){let r=rows(wb,'777');if(!wb.Sheets['777'])throw Error('777 worksheet not found in monthly Bid List.');let header=r.slice(0,30).flatMap((row,i)=>row.map((v,j)=>({v:String(v).toUpperCase().trim(),i,j})));let exclusions=[];
- for(let [label,reason] of [['FO CQ SCHEDULED','FO CQ'],['VAC FO','FO Vacation']]){let h=header.find(x=>x.v===label);if(!h)throw Error('Missing '+label+' column in 777 worksheet');for(let i=h.i+1;i<r.length;i++){let val=r[i]?.[h.j];if(typeof val!=='string'||!val.trim())break;exclusions.push({name:val.trim(),reason})}}
+ for(let [label,reason] of (position==='CA'?[['CA CQ SCHEDULED','CA CQ'],['VAC CA','CA Vacation']]:[['FO CQ SCHEDULED','FO CQ'],['VAC FO','FO Vacation']])){let h=header.find(x=>x.v===label);if(!h)throw Error('Missing '+label+' column in 777 worksheet');for(let i=h.i+1;i<r.length;i++){let val=r[i]?.[h.j];if(typeof val!=='string'||!val.trim())break;exclusions.push({name:val.trim(),reason})}}
  return exclusions}
 function parseBidRows(r){ // The company export uses repeated Name/Choice/Line rows; preserve displayed order.
  let hIndex=r.findIndex(row=>row.some(v=>/^name$/i.test(String(v).trim()))&&row.some(v=>/^line$/i.test(String(v).trim())));
@@ -68,7 +105,7 @@ function parseBidRows(r){ // The company export uses repeated Name/Choice/Line r
  let people=[],current=null;
  for(let i=hIndex+1;i<r.length;i++){
    let row=r[i]||[],name=String(row[nameCol]||'').trim(),choice=String(row[choiceCol]||'').trim(),line=String(row[lineCol]||'').trim();
-   if(/^name$/i.test(name)||/^first officer bids/i.test(name))continue;
+   if(/^name$/i.test(name)||/^(first officer|captain) bids/i.test(name))continue;
    if(name&&/[a-z]/i.test(name)&&!/^page\s+\d+|^total/i.test(name)){
      if(!current||!match(current.name,name)){current={name,bids:[],raw:[]};people.push(current)}
    }
@@ -95,15 +132,30 @@ async function parsePdf(file){
 function simulate(){let left={...state.capacities},awards=[];for(let i=0;i<state.people.length;i++){let p=state.people[i],exc=state.excluded.find(e=>match(e.name,p.name)),bids=state.overrides[p.name]||p.bids,got=null,rank=null;
  if(!exc)for(let j=0;j<bids.length;j++){let n=bids[j];if(left[n]>0){got=n;rank=j+1;left[n]--;break}}
  awards.push({name:p.name,seniority:i+1,line:got,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length})}
- state.awards=awards;render()}
-function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots()}
+ state.awards=awards;groups[position].awards=awards;render()}
+function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots();renderCrew()}
+function renderCrew(){
+ const summary=$('crewSummary'),members=$('crewMembers');members.replaceChildren();
+ const me=state.awards.find(p=>p.name===state.selectedName);
+ if(!me?.line){summary.textContent='Select a pilot with a projected line to see everyone projected to hold it.';return}
+ const line=me.line;
+ const all=['CA','FO'].flatMap(pos=>(groups[pos].awards||[]).filter(p=>p.line===line).map(p=>({...p,position:pos})));
+ summary.textContent='All pilots currently projected to hold F'+line+' ('+all.length+' total)';
+ for(const pos of ['CA','FO']){
+  const heading=document.createElement('h4');heading.textContent=pos==='CA'?'777 Captains':'777 First Officers';members.append(heading);
+  const matches=all.filter(p=>p.position===pos);
+  if(!groups[pos].people.length){const p=document.createElement('p');p.className='muted';p.textContent='Import the '+(pos==='CA'?'Captain':'First Officer')+' bid report to see this group.';members.append(p);continue}
+  if(!matches.length){const p=document.createElement('p');p.className='muted';p.textContent='No projected pilots on this line.';members.append(p);continue}
+  for(const p of matches){const div=document.createElement('div');div.className='crew-member';const name=document.createElement('strong');name.textContent=p.name;const detail=document.createElement('small');detail.textContent='Seniority #'+p.seniority+' · Choice #'+(p.rank||'—');div.append(name,detail);members.append(div)}
+ }
+}
 function renderPilots(){let q=$('search').value.trim().toLowerCase(),list=state.awards.filter(p=>!q||p.name.toLowerCase().includes(q)||('f'+p.line).toLowerCase()===q);$('pilotList').replaceChildren(...list.map(p=>{let d=document.createElement('div');d.className='pilot';let a=document.createElement('div'),b=document.createElement('b'),sm=document.createElement('small');a.textContent=`${p.seniority}. ${p.name}`;sm.textContent=p.excluded?p.excluded:p.blank?'No bid submitted':p.line?`Choice #${p.rank}`:'No available submitted choice';a.append(sm);b.textContent=p.excluded?'Excluded':p.line?'F'+p.line:'—';d.append(a,b);return d}))}
 $('search').oninput=renderPilots;
 function selectPilot(name){
- state.selectedName=name;
+ state.selectedName=name;groups[position].selectedName=name;
  $('homePilotSearch').value=name;
  hideHomePilotResults();
- if(name){try{localStorage.setItem('sbo-selected-pilot',name)}catch(e){console.warn('Name could not be remembered',e)}}
+ if(name){try{localStorage.setItem('sbo-selected-pilot-'+position,name)}catch(e){console.warn('Name could not be remembered',e)}}
  const pilot=state.people.find(p=>p.name===name);
  $('choices').value=(pilot?(state.overrides[name]||pilot.bids):[]).map(n=>'F'+n).join('\n');
  $('prefMsg').textContent=pilot?'Imported bids shown. Changes are what-if only.':'';
@@ -112,7 +164,7 @@ function selectPilot(name){
 $('saveChoices').onclick=()=>{
  if(!state.selectedName){$('prefMsg').textContent='Select a pilot on Home first.';return}
  const n=parseNums($('choices').value);
- state.overrides[state.selectedName]=n;
+ state.overrides[state.selectedName]=n;groups[position].overrides=state.overrides;
  $('prefMsg').textContent=`Applied ${n.length} what-if choices for ${state.selectedName}. This does not submit bids.`;
  simulate();
 };
@@ -122,11 +174,11 @@ $('analyze').onclick=async()=>{
    const pf=$('linesFile').files[0],rf=$('rosterFile').files[0],bf=$('bidsFile').files[0];
    if(!bf)throw Error('Select the updated View All FO Bids Excel report.');
    // Keep the existing monthly schedule and CQ/Vacation exclusions unless replaced.
-   const saved=await dbGet('parsed');
-   const base=saved&&saved.capacities&&saved.details&&Array.isArray(saved.excluded)?saved:null;
-   if(!base&&(!pf||!rf))throw Error('First import on this device: select all three files. Future updates need only the FO bids export.');
+   const monthly=await dbGet('monthly');
+   const base=monthly||((await dbGet('parsed'))||null);
+   if(!base&&(!pf||!rf))throw Error('First import: select the PDF, Bid List and '+position+' bids export.');
    if((pf&&!rf)||(!pf&&rf))throw Error('For a new month, replace BOTH the 777 Lines PDF and monthly Bid List workbook.');
-   status.textContent='Reading updated FO bids…';
+   status.textContent='Reading updated '+position+' bids…';
    const people=parseBidRows(rows(await excel(bf),'Sheet1'));
    if(people.length<30)throw Error(`Only ${people.length} pilots identified in the bid report. Please check the export format.`);
    let capacities,details,excluded,pageMap;
@@ -134,27 +186,34 @@ $('analyze').onclick=async()=>{
      status.textContent='Reading new monthly lines and exclusions…';
      const pdf=await parsePdf(pf);
      capacities=pdf.capacities;details=pdf.details;pageMap=pdf.pageMap;
-     excluded=parseRoster(await excel(rf));
+     const workbook=await excel(rf);
+     excluded=parseRoster(workbook);
+     const other=position==='FO'?'CA':'FO',prior=position;
+     let otherExcluded;try{position=other;otherExcluded=parseRoster(workbook)}finally{position=prior}
+     await dbPut('exclusions',{[prior]:excluded,[other]:otherExcluded});
      if(Object.keys(capacities).length<40)throw Error(`Only ${Object.keys(capacities).length} lines identified in PDF.`);
    }else{
-     capacities={...base.capacities};details={...base.details};pageMap={...(base.pageMap||{})};excluded=base.excluded;
+     capacities={...base.capacities};details={...base.details};pageMap={...(base.pageMap||{})};
+     const exclusions=await dbGet('exclusions');
+     excluded=exclusions?.[position]||groups[position].excluded;
    }
    for(const m of $('capacities').value.matchAll(/F?\\s*(\\d+)\\s*=\\s*(\\d+)/gi))capacities[Number(m[1])]=Number(m[2]);
    const updatedAt=new Date().toISOString();
-   const next={people,capacities,details,pageMap,excluded,overrides:{},updatedAt};
+   const next={people,excluded,overrides:{},updatedAt,selectedName:groups[position].selectedName||state.selectedName};
    // Save first, then update the live display, so a failed write cannot masquerade as success.
-   if(pf)await dbPut('linesPdf',pf);
-   await dbPut('parsed',next);
-   state={...state,...next};
+   if(pf){await dbPut('linesPdf',pf);await dbPut('monthly',{capacities,details,pageMap});}
+   await dbPut(groupKey(position),next);
+   groups[position]={...emptyGroup(),...next};
+   Object.assign(state,next,{capacities,details,pageMap});
    populatePilots();simulate();
    $('lastUpdated').textContent='Last imported: '+new Date(updatedAt).toLocaleString();
-   status.textContent=`Saved locally: ${people.length} pilots, ${Object.keys(capacities).length} lines, ${excluded.length} CQ/Vacation entries. ${pf?'All monthly files replaced.':'Only FO bids updated; saved lines and exclusions reused.'}`;
+   status.textContent=`Saved locally: ${people.length} ${position} pilots, ${Object.keys(capacities).length} lines, ${excluded.length} CQ/Vacation entries. ${pf?'Monthly files updated.':'Existing monthly files reused.'}`;
    $('bidsFile').value='';$('linesFile').value='';$('rosterFile').value='';
    document.querySelector('[data-tab="home"]').click();
  }catch(e){status.textContent='Import error: '+e.message;console.error(e)}
 };
 
-$('clearSaved').onclick=async()=>{if(!confirm('Remove saved bidding data and selected pilot from this device?'))return;await dbClear();localStorage.removeItem('sbo-selected-pilot');location.reload()};
+$('clearSaved').onclick=async()=>{if(!confirm('Remove saved bidding data and selected pilot from this device?'))return;await dbClear();localStorage.removeItem('sbo-selected-pilot');localStorage.removeItem('sbo-selected-pilot-FO');localStorage.removeItem('sbo-selected-pilot-CA');location.reload()};
 restoreSaved();
 
 // iPhone-friendly refresh flow: open the authenticated portal, then select the
@@ -168,7 +227,7 @@ $('bidsFile').addEventListener('change',()=>{
 });
 $('refreshUpdate').onclick=async()=>{
  if(!$('bidsFile').files[0])return;
- $('refreshStatus').textContent='Importing latest FO bids…';
+ $('refreshStatus').textContent='Importing latest '+position+' bids…';
  // Reuse the exact same tested parser, validation and IndexedDB persistence.
  await $('analyze').onclick();
  const msg=$('importStatus').textContent;
@@ -197,7 +256,7 @@ async function showProjectedLine(){
   const pageNumber=state.pageMap?.[me.line];
   const pdfBlob=await dbGet('linesPdf');
   if(!pageNumber||!pdfBlob){
-   $('lineDetailMessage').textContent='To view the original line chart, reimport this month’s 777 Lines PDF and Bid List together with the FO bids report. Your saved projection remains available.';
+   $('lineDetailMessage').textContent='To view the original line chart, reimport this month’s 777 Lines PDF and Bid List together with the bids report. Your saved projection remains available.';
    return;
   }
   if(!window.pdfjsLib)throw Error('PDF viewer unavailable. Connect to the internet and reload.');

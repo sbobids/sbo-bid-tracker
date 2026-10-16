@@ -17,3 +17,9 @@
 .pilot-search-option{display:block;width:100%;padding:13px 12px;text-align:left;border-radius:0;background:#fff;color:#142a42;font-size:14px;font-weight:600;border-bottom:1px solid #edf1f6}
 .pilot-search-option:active,.pilot-search-option:focus{background:#eaf1fa}
 .pilot-search-empty{padding:14px;color:#687b8c;font-size:13px}
+
+.position-switch{display:flex;gap:5px;padding:5px;background:#e8eff7;border-radius:13px;margin-bottom:14px}
+.position-switch button{flex:1;border:0;background:transparent;color:#375572;padding:12px 7px;border-radius:10px;font-size:14px;font-weight:750}
+.position-switch button.active{background:#fff;color:#0d294a;box-shadow:0 1px 5px #1a365020}
+
+#crewMembers h4{margin:16px 0 7px;font-size:14px}.crew-member{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(120,140,160,.2)}.crew-member small{font-size:12px;opacity:.7;text-align:right}
