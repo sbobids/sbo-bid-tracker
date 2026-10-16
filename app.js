@@ -168,7 +168,7 @@ function recalculateOtherGroup(){
  const other=position==='CA'?'FO':'CA',g=groups[other];
  g.awards=g.people.length?projectGroup(g):[];
 }
-function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?(me.cq?'CQ provisional award':'Provisional award'):'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded&&!x.cq).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots();renderCrew();renderMyBid()}
+function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?(me.cq?'CQ provisional award':'Provisional award'):'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded&&!x.cq).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden')&&$('lineDetail').parentElement===$('home'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots();renderCrew();renderMyBid()}
 function renderCrew(){
  const summary=$('crewSummary'),members=$('crewMembers');members.replaceChildren();
  const me=state.awards.find(p=>p.name===state.selectedName);
@@ -281,17 +281,18 @@ $('refreshUpdate').onclick=async()=>{
 // Render the original Jeppesen line chart directly from the imported PDF.
 // No transcription or invented day-by-day data. All PDF data stays on this device.
 let lineViewToken=0;
-async function showProjectedLine(){
+async function showProjectedLine(requestedLine){
  const me=state.awards.find(p=>p.name===state.selectedName);
- if(!me?.line){$('lineDetail').classList.add('hidden');return}
+ const displayLine=typeof requestedLine==='string'?requestedLine:me?.line;
+ if(!displayLine){$('lineDetail').classList.add('hidden');return}
  const token=++lineViewToken;
- $('lineDetailTitle').textContent='Projected line '+me.line;
+ $('lineDetailTitle').textContent='Projected line '+displayLine;
  $('lineDetail').classList.remove('hidden');
  $('lineDetailMessage').textContent='Loading original line chart…';
  $('lineChart').replaceChildren();
  $('lineZoom').classList.add('hidden');
  try{
-  const pageNumber=state.pageMap?.[me.line];
+  const pageNumber=state.pageMap?.[displayLine];
   const pdfBlob=await dbGet('linesPdf');
   if(!pageNumber||!pdfBlob){
    $('lineDetailMessage').textContent='To view the original line chart, reimport this month’s 777 Lines PDF and Bid List together with the bids report. Your saved projection remains available.';
@@ -313,7 +314,7 @@ async function showProjectedLine(){
   cropped.width=width;cropped.height=height;
   cropped.getContext('2d').drawImage(full,left,top,width,height,0,0,width,height);
   cropped.setAttribute('role','img');
-  cropped.setAttribute('aria-label','Original Kalitta PDF chart for line '+me.line);
+  cropped.setAttribute('aria-label','Original Kalitta PDF chart for line '+displayLine);
   $('lineChart').append(cropped);
   $('lineZoom').classList.remove('hidden');
   $('lineDetailMessage').textContent='Original chart from your imported PDF. Tap Enlarge for a clearer view, then scroll sideways.';
@@ -321,11 +322,28 @@ async function showProjectedLine(){
   if(token===lineViewToken)$('lineDetailMessage').textContent='Unable to display the PDF chart: '+e.message;
  }
 }
+// Reuse the exact Home PDF chart viewer for My Bid choices, without duplicating PDF rendering.
+const homeLineViewerAnchor=document.createComment('Home line viewer anchor');
+$('lineDetail').before(homeLineViewerAnchor);
+function moveLineViewerHome(){
+ homeLineViewerAnchor.after($('lineDetail'));
+}
+function openMyBidLineChart(line,item){
+ const viewer=$('lineDetail');
+ const alreadyOpen=!viewer.classList.contains('hidden')&&viewer.parentElement===item&&viewer.dataset.line===line;
+ if(alreadyOpen){viewer.classList.add('hidden');lineViewToken++;return}
+ item.append(viewer);
+ viewer.dataset.line=line;
+ $('lineChart').classList.remove('zoomed');
+ $('lineZoom').textContent='Enlarge / scroll';
+ showProjectedLine(line);
+}
 $('viewProjectedLine').onclick=()=>{
+ moveLineViewerHome();
  if($('lineDetail').classList.contains('hidden'))showProjectedLine();
  else{$('lineDetail').classList.add('hidden');lineViewToken++;}
 };
-$('closeLineDetail').onclick=()=>{$('lineDetail').classList.add('hidden');lineViewToken++};
+$('closeLineDetail').onclick=()=>{$('lineDetail').classList.add('hidden');lineViewToken++;if($('lineDetail').parentElement!==$('home'))moveLineViewerHome()};
 $('lineZoom').onclick=()=>{
  const zoomed=$('lineChart').classList.toggle('zoomed');
  $('lineZoom').textContent=zoomed?'Fit to screen':'Enlarge / scroll';
@@ -352,6 +370,7 @@ setInterval(updateBidCountdown,30000);
 // These are conditional alternatives, not simultaneous awards or guaranteed future outcomes.
 function renderMyBid(){
  const pilot=state.people.find(p=>p.name===state.selectedName), me=state.awards.find(a=>a.name===state.selectedName);
+ moveLineViewerHome();$('lineDetail').classList.add('hidden');lineViewToken++;
  const list=$('myBidLines');list.replaceChildren();
  $('myBidPilot').textContent=pilot?pilot.name+' · 777 '+position:'Select a pilot on Home to see their bid outlook.';
  $('myBidAward').textContent=me?.line?me.line:'—';
@@ -387,6 +406,8 @@ function renderMyBid(){
   info.append(title,sub);
   const badge=document.createElement('span');badge.className='bid-pill '+(available?'bid-yes':'bid-no');badge.textContent=projected?'Projected award':available?'Can hold':'Cannot hold';
   summary.append(order,info,badge);item.append(summary);
+ summary.title='View original PDF chart for '+line;
+ summary.addEventListener('click',()=>{if(item.open)openMyBidLineChart(line,item);else if($('lineDetail').parentElement===item){$('lineDetail').classList.add('hidden');lineViewToken++;moveLineViewerHome()}});
   const explanation=document.createElement('div');explanation.className='mybid-explanation';
   const description=document.createElement('p');description.textContent=!line.startsWith(me.cq?'Q':'F')?'This line is not eligible for this pilot’s CQ status.':cap==null?'No capacity was found for this line in the imported PDF.':available?'A position remains after currently submitted senior bids are simulated.':holders.length?'All positions are currently occupied by projected senior pilots.':'No position is available under the imported capacity data.';
   explanation.append(description);
