@@ -12,13 +12,12 @@ function setPosition(pos){
  const g=groups[pos];Object.assign(state,g);
  $('positionFO').classList.toggle('active',pos==='FO');$('positionCA').classList.toggle('active',pos==='CA');
  $('positionLabel').textContent='777 '+pos;
- $('portalInstructions').textContent='Sign in with Safari, then go to Reports → View Other Bids → '+(pos==='CA'?'Captain':'First Officer')+' Bids → View All → Excel → Export.';
+ $('portalInstructions').textContent='Sign in with Safari, then go to Reports → View Other Bids. Export View All Captain Bids and View All First Officer Bids separately as Excel files.';
  $('eligibleLabel').textContent='Eligible 777 '+(pos==='CA'?'Captains':'FOs');
- $('refreshTitle').textContent='Refresh '+(pos==='CA'?'Captain':'FO')+' bids';
- $('pickLatest').textContent='Choose downloaded '+(pos==='CA'?'Captain':'FO')+' bids';
+ $('refreshTitle').textContent='Refresh Captain & FO bids';
 
  $('homePilotSearch').placeholder='Search '+(pos==='CA'?'Captain':'First Officer')+' name…';
- $('bidsFile').value='';$('refreshFileName').textContent='No report selected';$('refreshUpdate').disabled=true;
+ updateRefreshFiles();
  $('lastUpdated').textContent=g.updatedAt?'Last imported: '+new Date(g.updatedAt).toLocaleString():'No '+pos+' bids imported yet';
  $('importStatus').textContent=g.people.length?pos+' bids loaded.':'Import the '+pos+' bids report to get started.';
  $('lineDetail').classList.add('hidden');
@@ -228,6 +227,7 @@ async function importBids(){
  position=target;
  setPosition(target);
  for(const id of ['captainBidsFile','foBidsFile','bidsFile','linesFile','rosterFile'])$(id).value='';
+ updateRefreshFiles();
  status.textContent='Saved: '+Object.entries(pending).map(([pos,data])=>data.people.length+' '+pos+' pilots').join(', ')+'. Captain and FO lists are separate.';
  $('refreshStatus').textContent=status.textContent;
  document.querySelector('[data-tab="home"]').click();
@@ -237,30 +237,23 @@ $('analyze').onclick=async()=>{try{await importBids()}catch(e){$('importStatus')
 $('clearSaved').onclick=async()=>{if(!confirm('Remove saved bidding data and selected pilot from this device?'))return;await dbClear();localStorage.removeItem('sbo-selected-pilot');localStorage.removeItem('sbo-selected-pilot-FO');localStorage.removeItem('sbo-selected-pilot-CA');location.reload()};
 restoreSaved();
 
-// iPhone-friendly refresh flow: open the authenticated portal, then select the
-// downloaded file using the operating system's normal file picker.
-// Browser security prevents silent reading of Safari downloads or portal cookies.
-$('pickLatest').onclick=()=>{$('bidsFile').click()};
-$('bidsFile').addEventListener('change',()=>{
- const f=$('bidsFile').files[0];
- $('refreshFileName').textContent=f?`Selected: ${f.name}`:'No report selected';
- $('refreshUpdate').disabled=!f;
-});
+// Both reports can be refreshed together, without changing the Home position.
+function updateRefreshFiles(){
+ const ca=$('captainBidsFile').files[0],fo=$('foBidsFile').files[0];
+ $('refreshCaptainFileName').textContent=ca?'Selected: '+ca.name:'No Captain report selected';
+ $('refreshFOFileName').textContent=fo?'Selected: '+fo.name:'No First Officer report selected';
+ $('refreshUpdate').disabled=!(ca||fo);
+}
+$('pickCaptainLatest').onclick=()=>$('captainBidsFile').click();
+$('pickFOLatest').onclick=()=>$('foBidsFile').click();
+$('captainBidsFile').addEventListener('change',updateRefreshFiles);
+$('foBidsFile').addEventListener('change',updateRefreshFiles);
 $('refreshUpdate').onclick=async()=>{
- if(!$('bidsFile').files[0])return;
- $('refreshStatus').textContent='Importing latest '+position+' bids…';
- // Reuse the exact same tested parser, validation and IndexedDB persistence.
- await $('analyze').onclick();
- const msg=$('importStatus').textContent;
- $('refreshStatus').textContent=msg;
- if(msg.startsWith('Saved:')){
-   $('refreshFileName').textContent='No report selected';
-   $('refreshUpdate').disabled=true;
- }else{
-   document.querySelector('[data-tab="refresh"]').click();
- }
+ $('refreshStatus').textContent='Importing selected Captain / First Officer reports…';
+ try{await importBids()}
+ catch(e){$('refreshStatus').textContent='Import error: '+e.message;console.error(e)}
+ updateRefreshFiles();
 };
-
 // Render the original Jeppesen line chart directly from the imported PDF.
 // No transcription or invented day-by-day data. All PDF data stays on this device.
 let lineViewToken=0;
