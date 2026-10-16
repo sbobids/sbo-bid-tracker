@@ -11,6 +11,7 @@ function setPosition(pos){
  position=pos;localStorage.setItem('sbo-position',pos);
  const g=groups[pos];Object.assign(state,g);
  $('positionFO').classList.toggle('active',pos==='FO');$('positionCA').classList.toggle('active',pos==='CA');
+ $('pilotsPositionFO').classList.toggle('active',pos==='FO');$('pilotsPositionCA').classList.toggle('active',pos==='CA');
  $('positionLabel').textContent='777 '+pos;
  $('portalInstructions').textContent='Sign in with Safari, then go to Reports → View Other Bids. Export View All Captain Bids and View All First Officer Bids separately as Excel files.';
  $('eligibleLabel').textContent='Eligible 777 '+(pos==='CA'?'Captains':'FOs');
@@ -26,6 +27,8 @@ function setPosition(pos){
 }
 $('positionFO').onclick=()=>setPosition('FO');
 $('positionCA').onclick=()=>setPosition('CA');
+$('pilotsPositionFO').onclick=()=>setPosition('FO');
+$('pilotsPositionCA').onclick=()=>setPosition('CA');
 $('choices').value='';
 const DB_NAME='sbo-bid-tracker-local-v1', DB_STORE='saved';
 function openDB(){return new Promise((resolve,reject)=>{let req=indexedDB.open(DB_NAME,1);req.onupgradeneeded=()=>req.result.createObjectStore(DB_STORE);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}
