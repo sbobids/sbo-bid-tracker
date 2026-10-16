@@ -7,7 +7,45 @@ function openDB(){return new Promise((resolve,reject)=>{let req=indexedDB.open(D
 async function dbPut(key,value){let db=await openDB();try{await new Promise((resolve,reject)=>{let tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).put(value,key);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}}
 async function dbGet(key){let db=await openDB();try{return await new Promise((resolve,reject)=>{let req=db.transaction(DB_STORE).objectStore(DB_STORE).get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}finally{db.close()}}
 async function dbClear(){let db=await openDB();try{await new Promise((resolve,reject)=>{let tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}}
-function populatePilots(){const sel=$('pilotSelect');sel.replaceChildren(new Option('Choose your name…',''),...state.people.map(p=>new Option(p.name,p.name)));const previous=localStorage.getItem('sbo-selected-pilot')||'';const name=state.people.some(p=>p.name===previous)?previous:'';sel.value=name;selectPilot(name)}
+function populatePilots(){
+ const previous=state.selectedName||localStorage.getItem('sbo-selected-pilot')||'';
+ const name=state.people.some(p=>p.name===previous)?previous:'';
+ selectPilot(name);
+}
+function hideHomePilotResults(){
+ $('homePilotResults').classList.add('hidden');
+ $('homePilotSearch').setAttribute('aria-expanded','false');
+}
+function showHomePilotResults(){
+ const input=$('homePilotSearch'),box=$('homePilotResults');
+ const query=input.value.trim().toLowerCase();
+ box.replaceChildren();
+ if(!state.people.length){hideHomePilotResults();return}
+ const matches=state.people.filter(p=>!query||p.name.toLowerCase().includes(query)).slice(0,25);
+ if(!matches.length){
+  const empty=document.createElement('div');empty.className='pilot-search-empty';empty.textContent='No matching pilots';box.append(empty);
+ }else{
+  for(const p of matches){
+   const b=document.createElement('button');b.type='button';b.className='pilot-search-option';b.setAttribute('role','option');b.textContent=p.name;
+   b.addEventListener('click',()=>selectPilot(p.name));
+   box.append(b);
+  }
+ }
+ box.classList.remove('hidden');input.setAttribute('aria-expanded','true');
+}
+$('homePilotSearch').addEventListener('focus',showHomePilotResults);
+$('homePilotSearch').addEventListener('input',showHomePilotResults);
+$('homePilotSearch').addEventListener('keydown',e=>{
+ if(e.key==='Escape'){hideHomePilotResults();$('homePilotSearch').blur()}
+ if(e.key==='Enter'){
+  const first=$('homePilotResults').querySelector('.pilot-search-option');
+  if(first){e.preventDefault();first.click();$('homePilotSearch').blur()}
+ }
+});
+document.addEventListener('pointerdown',e=>{
+ if(!e.target.closest('.pilot-search-wrap'))hideHomePilotResults();
+});
+
 async function restoreSaved(){try{const saved=await dbGet('parsed');if(saved&&Array.isArray(saved.people)&&saved.people.length){state={...state,...saved,awards:[]};populatePilots();simulate();$('lastUpdated').textContent=saved.updatedAt?'Last imported: '+new Date(saved.updatedAt).toLocaleString():'Saved data restored (import date unknown)';$('importStatus').textContent='Saved bidding data restored. To update bids, select only the View All FO Bids file.'}else{$('importStatus').textContent='No saved bidding data on this device yet.'}}catch(e){$('importStatus').textContent='Local storage unavailable: '+e.message}}
 
 document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x===b));document.querySelectorAll('.page').forEach(x=>x.classList.toggle('hidden',x.id!==b.dataset.tab))});
@@ -58,21 +96,19 @@ function simulate(){let left={...state.capacities},awards=[];for(let i=0;i<state
  if(!exc)for(let j=0;j<bids.length;j++){let n=bids[j];if(left[n]>0){got=n;rank=j+1;left[n]--;break}}
  awards.push({name:p.name,seniority:i+1,line:got,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length})}
  state.awards=awards;render()}
-function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line;
- $('whoAmIFlyingWith').disabled=!me?.line;
- if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();
- if(!$('flyingWith').classList.contains('hidden'))showFlyingWith();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots()}
+function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots()}
 function renderPilots(){let q=$('search').value.trim().toLowerCase(),list=state.awards.filter(p=>!q||p.name.toLowerCase().includes(q)||('f'+p.line).toLowerCase()===q);$('pilotList').replaceChildren(...list.map(p=>{let d=document.createElement('div');d.className='pilot';let a=document.createElement('div'),b=document.createElement('b'),sm=document.createElement('small');a.textContent=`${p.seniority}. ${p.name}`;sm.textContent=p.excluded?p.excluded:p.blank?'No bid submitted':p.line?`Choice #${p.rank}`:'No available submitted choice';a.append(sm);b.textContent=p.excluded?'Excluded':p.line?'F'+p.line:'—';d.append(a,b);return d}))}
 $('search').oninput=renderPilots;
 function selectPilot(name){
  state.selectedName=name;
+ $('homePilotSearch').value=name;
+ hideHomePilotResults();
  if(name){try{localStorage.setItem('sbo-selected-pilot',name)}catch(e){console.warn('Name could not be remembered',e)}}
  const pilot=state.people.find(p=>p.name===name);
  $('choices').value=(pilot?(state.overrides[name]||pilot.bids):[]).map(n=>'F'+n).join('\n');
  $('prefMsg').textContent=pilot?'Imported bids shown. Changes are what-if only.':'';
  if(state.people.length)render();
 }
-$('pilotSelect').onchange=e=>selectPilot(e.target.value);
 $('saveChoices').onclick=()=>{
  if(!state.selectedName){$('prefMsg').textContent='Select a pilot on Home first.';return}
  const n=parseNums($('choices').value);
@@ -188,38 +224,6 @@ async function showProjectedLine(){
   if(token===lineViewToken)$('lineDetailMessage').textContent='Unable to display the PDF chart: '+e.message;
  }
 }
-
-function showFlyingWith(){
- const me=state.awards.find(p=>p.name===state.selectedName);
- if(!me?.line){$('flyingWith').classList.add('hidden');return}
- $('flyingWithTitle').textContent=`Who am I flying with on F${me.line}?`;
- $('flyingWith').classList.remove('hidden');
- const partners=state.awards.filter(p=>p.line===me.line&&p.name!==me.name);
- $('flyingWithList').replaceChildren(...partners.map(p=>{
-   const row=document.createElement('div');
-   row.className='flying-with-pilot';
-   const info=document.createElement('div');
-   const name=document.createElement('strong');
-   const meta=document.createElement('small');
-   name.textContent=p.name;
-   meta.textContent=`Seniority #${p.seniority}${p.rank?` · Choice #${p.rank}`:''}`;
-   info.append(name,meta);
-   const line=document.createElement('span');
-   line.className='flying-with-line';
-   line.textContent='F'+p.line;
-   row.append(info,line);
-   return row;
- }));
- $('flyingWithMessage').textContent=partners.length
-   ? `${partners.length} other first officer${partners.length===1?'':'s'} ${partners.length===1?'is':'are'} currently projected to hold this line.`
-   : 'No other first officer is currently projected to hold this line.';
-}
-$('whoAmIFlyingWith').onclick=()=>{
- if($('flyingWith').classList.contains('hidden'))showFlyingWith();
- else $('flyingWith').classList.add('hidden');
-};
-$('closeFlyingWith').onclick=()=>$('flyingWith').classList.add('hidden');
-
 $('viewProjectedLine').onclick=()=>{
  if($('lineDetail').classList.contains('hidden'))showProjectedLine();
  else{$('lineDetail').classList.add('hidden');lineViewToken++;}
@@ -229,25 +233,3 @@ $('lineZoom').onclick=()=>{
  const zoomed=$('lineChart').classList.toggle('zoomed');
  $('lineZoom').textContent=zoomed?'Fit to screen':'Enlarge / scroll';
 };
-
-// All dates are UTC. At/after 21:00Z on the 16th, count down to next month.
-function nextBidDeadline(now){
-  let year=now.getUTCFullYear(), month=now.getUTCMonth();
-  let deadline=Date.UTC(year,month,16,21,0,0);
-  if(now.getTime()>=deadline) deadline=Date.UTC(year,month+1,16,21,0,0);
-  return deadline;
-}
-function updateBidCountdown(){
-  const now=new Date(), deadline=nextBidDeadline(now);
-  let remaining=Math.max(0,Math.ceil((deadline-now.getTime())/1000));
-  const days=Math.floor(remaining/86400); remaining%=86400;
-  const hours=Math.floor(remaining/3600); remaining%=3600;
-  const minutes=Math.floor(remaining/60);
-  $('bidDays').textContent=String(days).padStart(2,'0');
-  $('bidHours').textContent=String(hours).padStart(2,'0');
-  $('bidMinutes').textContent=String(minutes).padStart(2,'0');
-  $('bidDeadline').textContent='Closes '+new Intl.DateTimeFormat('en-GB',{timeZone:'UTC',day:'numeric',month:'long',year:'numeric'}).format(new Date(deadline))+' at 21:00 UTC';
-}
-updateBidCountdown();
-setInterval(updateBidCountdown,10000);
-document.addEventListener('visibilitychange',()=>{if(!document.hidden)updateBidCountdown()});

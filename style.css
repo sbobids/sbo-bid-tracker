@@ -8,46 +8,12 @@
 .line-chart.zoomed canvas{width:950px;max-width:none}
 .line-zoom{display:block;width:100%;margin:8px 0;background:#eaf1fa;color:#173d66}
 
-.secondary{background:#e9eff6;color:#173d67}
-.flying-with{background:#fff;border-radius:16px;padding:18px;box-shadow:0 2px 12px #14263b08}
-.flying-with-list{display:grid;gap:8px;margin-top:10px}
-.flying-with-pilot{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#f4f7fb;border-radius:12px;padding:12px 13px}
-.flying-with-pilot strong{font-size:14px;color:#142a42}
-.flying-with-pilot small{display:block;color:#718497;font-size:11px;margin-top:3px}
-.flying-with-line{font-weight:800;color:#173d67;white-space:nowrap}
-.flying-with-empty{background:#f4f7fb;border-radius:12px;padding:13px;color:#687b8c;font-size:13px}
-
-/* Monthly bid deadline, fixed at 16th 21:00 UTC regardless of local timezone. */
-.bid-countdown{background:#fff;border:1px solid #dce7f2;border-radius:17px;padding:16px 18px;box-shadow:0 2px 12px #14263b08}
-.bid-countdown-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:11px;letter-spacing:.8px;font-weight:850;color:#294968}
-.bid-utc-tag{font-size:10px;white-space:nowrap;background:#eaf1fa;color:#173d66;border-radius:30px;padding:5px 8px}
-.bid-time-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:13px}
-.bid-time-grid>div{background:#f1f5fa;border-radius:11px;padding:11px 3px 9px;text-align:center}
-.bid-time-grid strong{display:block;font-size:clamp(21px,5vw,31px);line-height:1.1;font-variant-numeric:tabular-nums;letter-spacing:-.7px;color:#102b4e}
-.bid-time-grid small{display:block;font-size:9px;font-weight:800;color:#75899c;letter-spacing:.35px;margin-top:6px}
-.bid-deadline{margin:12px 0 0;color:#60778d;font-size:12px;text-align:center}
-
-/* Compact UTC countdown beside selected pilot */
-.pilot-bar{align-items:end;gap:12px}
-.pilot-bar label{flex:1 1 55%;min-width:0}
-.pilot-bar select{max-width:none}
-.pilot-bar .bid-countdown{flex:0 1 215px;min-width:0;padding:8px 10px;border-radius:12px;box-shadow:none}
-.pilot-bar .bid-countdown-heading{font-size:9px;letter-spacing:.2px;gap:4px}
-.pilot-bar .bid-utc-tag{font-size:8px;padding:2px 4px}
-.pilot-bar .bid-time-grid{gap:3px;margin-top:6px}
-.pilot-bar .bid-time-grid>div{padding:5px 1px 4px;border-radius:6px}
-.pilot-bar .bid-time-grid strong{font-size:17px;letter-spacing:0}
-.pilot-bar .bid-time-grid small{font-size:7px;margin-top:3px;letter-spacing:0}
-.pilot-bar .bid-deadline{font-size:9px;margin:5px 0 0;line-height:1.25}
-@media(max-width:430px){.pilot-bar{gap:7px}.pilot-bar .bid-countdown{flex-basis:46%;padding:7px 6px}.pilot-bar .bid-countdown-heading{font-size:8px}.pilot-bar .bid-utc-tag{display:none}.pilot-bar .bid-time-grid strong{font-size:15px}.pilot-bar .bid-deadline{font-size:8px}.pilot-bar select{font-size:12px;padding:10px 21px 10px 7px}}
-
-/* On narrow phones, put the compact timer directly under the pilot selector. */
-@media(max-width:540px){
- .pilot-bar{flex-wrap:wrap;align-items:stretch}
- .pilot-bar label{flex:1 1 100%}
- .pilot-bar .bid-countdown{flex:1 1 100%;display:flex;align-items:center;gap:8px;padding:7px 9px}
- .pilot-bar .bid-countdown-heading{flex:0 0 30%;font-size:9px;line-height:1.35}
- .pilot-bar .bid-time-grid{flex:1 1 43%;margin-top:0}
- .pilot-bar .bid-deadline{flex:0 1 24%;margin:0;font-size:9px}
- .pilot-bar .bid-utc-tag{display:none}
-}
+/* Searchable pilot selector on Home */
+.pilot-search-field{flex:1;min-width:0}
+.pilot-search-field>label{display:block;padding:0;background:transparent;font-size:10px;color:#6b8094;letter-spacing:.8px}
+.pilot-search-wrap{position:relative;margin-top:5px}
+#homePilotSearch{width:100%;max-width:100%;font-size:14px;font-weight:700;padding:11px 12px;border:1px solid #d9e4ef;border-radius:11px;background:#fff}
+.pilot-search-results{position:absolute;z-index:30;top:calc(100% + 5px);left:0;right:0;max-height:260px;overflow-y:auto;-webkit-overflow-scrolling:touch;border:1px solid #d9e4ef;border-radius:12px;background:#fff;box-shadow:0 12px 25px #102b4e24}
+.pilot-search-option{display:block;width:100%;padding:13px 12px;text-align:left;border-radius:0;background:#fff;color:#142a42;font-size:14px;font-weight:600;border-bottom:1px solid #edf1f6}
+.pilot-search-option:active,.pilot-search-option:focus{background:#eaf1fa}
+.pilot-search-empty{padding:14px;color:#687b8c;font-size:13px}
