@@ -16,13 +16,13 @@ function setPosition(pos){
  $('eligibleLabel').textContent='Eligible 777 '+(pos==='CA'?'Captains':'FOs');
  $('refreshTitle').textContent='Refresh '+(pos==='CA'?'Captain':'FO')+' bids';
  $('pickLatest').textContent='Choose downloaded '+(pos==='CA'?'Captain':'FO')+' bids';
- $('bidsLabel').textContent='View All '+(pos==='CA'?'Captain':'FO')+' Bids export (.xls/.xlsx) (every update)';
+
  $('homePilotSearch').placeholder='Search '+(pos==='CA'?'Captain':'First Officer')+' name…';
  $('bidsFile').value='';$('refreshFileName').textContent='No report selected';$('refreshUpdate').disabled=true;
  $('lastUpdated').textContent=g.updatedAt?'Last imported: '+new Date(g.updatedAt).toLocaleString():'No '+pos+' bids imported yet';
  $('importStatus').textContent=g.people.length?pos+' bids loaded.':'Import the '+pos+' bids report to get started.';
  $('lineDetail').classList.add('hidden');
- $('search').value='';$('choices').value='';
+ $('search').value='';$('choices').value='';$('homePilotSearch').value='';hideHomePilotResults();
  populatePilots();simulate();
 }
 $('positionFO').onclick=()=>setPosition('FO');
@@ -34,7 +34,7 @@ async function dbPut(key,value){let db=await openDB();try{await new Promise((res
 async function dbGet(key){let db=await openDB();try{return await new Promise((resolve,reject)=>{let req=db.transaction(DB_STORE).objectStore(DB_STORE).get(key);req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error)})}finally{db.close()}}
 async function dbClear(){let db=await openDB();try{await new Promise((resolve,reject)=>{let tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).clear();tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}finally{db.close()}}
 function populatePilots(){
- const previous=state.selectedName||localStorage.getItem('sbo-selected-pilot-'+position)||localStorage.getItem('sbo-selected-pilot')||'';
+ const previous=state.selectedName||localStorage.getItem('sbo-selected-pilot-'+position)||(position==='FO'?localStorage.getItem('sbo-selected-pilot'):'')||'';
  const name=state.people.some(p=>p.name===previous)?previous:'';
  selectPilot(name);
 }
@@ -132,7 +132,19 @@ async function parsePdf(file){
 function simulate(){let left={...state.capacities},awards=[];for(let i=0;i<state.people.length;i++){let p=state.people[i],exc=state.excluded.find(e=>match(e.name,p.name)),bids=state.overrides[p.name]||p.bids,got=null,rank=null;
  if(!exc)for(let j=0;j<bids.length;j++){let n=bids[j];if(left[n]>0){got=n;rank=j+1;left[n]--;break}}
  awards.push({name:p.name,seniority:i+1,line:got,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length})}
- state.awards=awards;groups[position].awards=awards;render()}
+ state.awards=awards;groups[position].awards=awards;recalculateOtherGroup();render()}
+function recalculateOtherGroup(){
+ const other=position==='CA'?'FO':'CA',g=groups[other];
+ if(!g.people.length){g.awards=[];return}
+ const left={...state.capacities},awards=[];
+ for(let i=0;i<g.people.length;i++){
+  const p=g.people[i],exc=g.excluded.find(e=>match(e.name,p.name)),bids=g.overrides[p.name]||p.bids;
+  let line=null,rank=null;
+  if(!exc)for(let j=0;j<bids.length;j++)if(left[bids[j]]>0){line=bids[j];rank=j+1;left[line]--;break}
+  awards.push({name:p.name,seniority:i+1,line,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length});
+ }
+ g.awards=awards;
+}
 function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots();renderCrew()}
 function renderCrew(){
  const summary=$('crewSummary'),members=$('crewMembers');members.replaceChildren();
@@ -168,50 +180,57 @@ $('saveChoices').onclick=()=>{
  $('prefMsg').textContent=`Applied ${n.length} what-if choices for ${state.selectedName}. This does not submit bids.`;
  simulate();
 };
-$('analyze').onclick=async()=>{
- let status=$('importStatus');
- try{
-   const pf=$('linesFile').files[0],rf=$('rosterFile').files[0],bf=$('bidsFile').files[0];
-   if(!bf)throw Error('Select the updated View All FO Bids Excel report.');
-   // Keep the existing monthly schedule and CQ/Vacation exclusions unless replaced.
-   const monthly=await dbGet('monthly');
-   const base=monthly||((await dbGet('parsed'))||null);
-   if(!base&&(!pf||!rf))throw Error('First import: select the PDF, Bid List and '+position+' bids export.');
-   if((pf&&!rf)||(!pf&&rf))throw Error('For a new month, replace BOTH the 777 Lines PDF and monthly Bid List workbook.');
-   status.textContent='Reading updated '+position+' bids…';
-   const people=parseBidRows(rows(await excel(bf),'Sheet1'));
-   if(people.length<30)throw Error(`Only ${people.length} pilots identified in the bid report. Please check the export format.`);
-   let capacities,details,excluded,pageMap;
-   if(pf&&rf){
-     status.textContent='Reading new monthly lines and exclusions…';
-     const pdf=await parsePdf(pf);
-     capacities=pdf.capacities;details=pdf.details;pageMap=pdf.pageMap;
-     const workbook=await excel(rf);
-     excluded=parseRoster(workbook);
-     const other=position==='FO'?'CA':'FO',prior=position;
-     let otherExcluded;try{position=other;otherExcluded=parseRoster(workbook)}finally{position=prior}
-     await dbPut('exclusions',{[prior]:excluded,[other]:otherExcluded});
-     if(Object.keys(capacities).length<40)throw Error(`Only ${Object.keys(capacities).length} lines identified in PDF.`);
-   }else{
-     capacities={...base.capacities};details={...base.details};pageMap={...(base.pageMap||{})};
-     const exclusions=await dbGet('exclusions');
-     excluded=exclusions?.[position]||groups[position].excluded;
-   }
-   for(const m of $('capacities').value.matchAll(/F?\\s*(\\d+)\\s*=\\s*(\\d+)/gi))capacities[Number(m[1])]=Number(m[2]);
-   const updatedAt=new Date().toISOString();
-   const next={people,excluded,overrides:{},updatedAt,selectedName:groups[position].selectedName||state.selectedName};
-   // Save first, then update the live display, so a failed write cannot masquerade as success.
-   if(pf){await dbPut('linesPdf',pf);await dbPut('monthly',{capacities,details,pageMap});}
-   await dbPut(groupKey(position),next);
-   groups[position]={...emptyGroup(),...next};
-   Object.assign(state,next,{capacities,details,pageMap});
-   populatePilots();simulate();
-   $('lastUpdated').textContent='Last imported: '+new Date(updatedAt).toLocaleString();
-   status.textContent=`Saved locally: ${people.length} ${position} pilots, ${Object.keys(capacities).length} lines, ${excluded.length} CQ/Vacation entries. ${pf?'Monthly files updated.':'Existing monthly files reused.'}`;
-   $('bidsFile').value='';$('linesFile').value='';$('rosterFile').value='';
-   document.querySelector('[data-tab="home"]').click();
- }catch(e){status.textContent='Import error: '+e.message;console.error(e)}
-};
+async function importBids(){
+ const status=$('importStatus');
+ const pf=$('linesFile').files[0],rf=$('rosterFile').files[0];
+ const selected={CA:$('captainBidsFile').files[0],FO:$('foBidsFile').files[0]};
+ // Quick update on Refresh tab is scoped to the active position.
+ if($('bidsFile').files[0])selected[position]=$('bidsFile').files[0];
+ if(!selected.CA&&!selected.FO)throw Error('Choose at least one Captain or First Officer bids report.');
+ const prior=position;
+ const monthly=await dbGet('monthly'),legacy=await dbGet('parsed');
+ const base=monthly||legacy;
+ if(!base&&(!pf||!rf))throw Error('First import needs the 777 Lines PDF and monthly Bid List workbook too.');
+ if((pf&&!rf)||(!pf&&rf))throw Error('Replace the monthly Lines PDF and Bid List together.');
+ let capacities,details,pageMap,exclusions=await dbGet('exclusions')||{CA:[],FO:[]};
+ if(pf&&rf){
+  status.textContent='Reading shared 777 Lines PDF and Bid List…';
+  const pdf=await parsePdf(pf);({capacities,details,pageMap}=pdf);
+  if(Object.keys(capacities).length<40)throw Error('Only '+Object.keys(capacities).length+' lines found in PDF.');
+  const workbook=await excel(rf);
+  for(const pos of ['CA','FO']){
+   position=pos;
+   try{exclusions[pos]=parseRoster(workbook)}finally{position=prior}
+  }
+ }else{
+  capacities={...base.capacities};details={...base.details};pageMap={...(base.pageMap||{})};
+ }
+ for(const m of $('capacities').value.matchAll(/F?\s*(\d+)\s*=\s*(\d+)/gi))capacities[Number(m[1])]=Number(m[2]);
+ const pending={};
+ for(const pos of ['CA','FO']){
+  if(!selected[pos])continue;
+  status.textContent='Reading '+(pos==='CA'?'Captain':'First Officer')+' bids…';
+  const people=parseBidRows(rows(await excel(selected[pos]),'Sheet1'));
+  if(people.length<30)throw Error('Only '+people.length+' '+pos+' pilots found. Verify the '+pos+' export.');
+  pending[pos]={people,excluded:exclusions[pos]||[],overrides:{},updatedAt:new Date().toISOString(),selectedName:groups[pos].selectedName||''};
+ }
+ // Parse all files before committing anything, so a bad second report does not partially update data.
+ if(pf){await dbPut('linesPdf',pf);await dbPut('monthly',{capacities,details,pageMap});await dbPut('exclusions',exclusions)}
+ for(const pos of Object.keys(pending)){await dbPut(groupKey(pos),pending[pos]);groups[pos]={...emptyGroup(),...pending[pos]}}
+ // Update the non-imported group with the latest monthly exclusions too.
+ if(pf)for(const pos of ['CA','FO'])if(!pending[pos]){groups[pos].excluded=exclusions[pos]||[];if(groups[pos].people.length)await dbPut(groupKey(pos),{...groups[pos],awards:[]})}
+ Object.assign(state,{capacities,details,pageMap});
+ // Do not stash the old state over newly imported groups.
+ position=prior;
+ const target=selected[prior]?prior:(selected.CA?'CA':'FO');
+ position=target;
+ setPosition(target);
+ for(const id of ['captainBidsFile','foBidsFile','bidsFile','linesFile','rosterFile'])$(id).value='';
+ status.textContent='Saved: '+Object.entries(pending).map(([pos,data])=>data.people.length+' '+pos+' pilots').join(', ')+'. Captain and FO lists are separate.';
+ $('refreshStatus').textContent=status.textContent;
+ document.querySelector('[data-tab="home"]').click();
+}
+$('analyze').onclick=async()=>{try{await importBids()}catch(e){$('importStatus').textContent='Import error: '+e.message;console.error(e)}};
 
 $('clearSaved').onclick=async()=>{if(!confirm('Remove saved bidding data and selected pilot from this device?'))return;await dbClear();localStorage.removeItem('sbo-selected-pilot');localStorage.removeItem('sbo-selected-pilot-FO');localStorage.removeItem('sbo-selected-pilot-CA');location.reload()};
 restoreSaved();
