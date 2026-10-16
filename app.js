@@ -309,3 +309,19 @@ $('lineZoom').onclick=()=>{
  const zoomed=$('lineChart').classList.toggle('zoomed');
  $('lineZoom').textContent=zoomed?'Fit to screen':'Enlarge / scroll';
 };
+
+// Monthly bidding deadline: 16th at 21:00 UTC. Uses UTC to avoid timezone errors.
+function updateBidCountdown(){
+ const now=new Date();
+ let deadline=Date.UTC(now.getUTCFullYear(),now.getUTCMonth(),16,21,0,0);
+ if(now.getTime()>=deadline)deadline=Date.UTC(now.getUTCFullYear(),now.getUTCMonth()+1,16,21,0,0);
+ const minutes=Math.max(0,Math.ceil((deadline-now.getTime())/60000));
+ const days=Math.floor(minutes/1440),hours=Math.floor((minutes%1440)/60),mins=minutes%60;
+ $('bidDays').textContent=String(days);
+ $('bidHours').textContent=String(hours).padStart(2,'0');
+ $('bidMinutes').textContent=String(mins).padStart(2,'0');
+ const date=new Date(deadline);
+ $('bidDeadline').textContent=date.toLocaleDateString('en-GB',{day:'numeric',month:'short',timeZone:'UTC'})+' · 21:00 UTC';
+}
+updateBidCountdown();
+setInterval(updateBidCountdown,30000);

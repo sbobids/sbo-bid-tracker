@@ -23,3 +23,15 @@
 .position-switch button.active{background:#fff;color:#0d294a;box-shadow:0 1px 5px #1a365020}
 
 #crewMembers h4{margin:16px 0 7px;font-size:14px}.crew-member{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid rgba(120,140,160,.2)}.crew-member small{font-size:12px;opacity:.7;text-align:right}
+
+/* Compact monthly bidding countdown beside pilot selection */
+.pilot-bar{align-items:flex-start}
+.pilot-side{display:flex;flex-direction:column;align-items:flex-end;gap:7px;flex:none}
+.bid-countdown{background:#fff;border:1px solid #dce7f2;border-radius:11px;padding:7px 9px;text-align:center;min-width:146px;box-shadow:0 2px 8px #14263b06}
+.bid-countdown-title{font-size:9px;letter-spacing:.6px;font-weight:800;color:#647d96;margin-bottom:5px}
+.bid-countdown-values{display:flex;gap:4px;justify-content:center}
+.bid-countdown-values span{display:flex;flex-direction:column;align-items:center;min-width:38px;padding:3px 4px;background:#edf3fa;border-radius:6px}
+.bid-countdown-values b{font-size:17px;line-height:1.15;color:#173d66;font-variant-numeric:tabular-nums}
+.bid-countdown-values small{font-size:8px;font-weight:800;color:#69819b;margin-top:2px}
+.bid-countdown-deadline{font-size:9px;color:#6b8094;margin-top:5px}
+@media(max-width:560px){.pilot-bar{flex-wrap:wrap}.pilot-search-field{flex-basis:100%}.pilot-side{width:100%;flex-direction:row;align-items:center;justify-content:space-between}.bid-countdown{min-width:146px}}
