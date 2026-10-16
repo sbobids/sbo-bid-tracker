@@ -79,7 +79,8 @@ async function restoreSaved(){
   const legacy=await dbGet('parsed'),monthly=await dbGet('monthly');
   const savedFO=await dbGet(groupKey('FO')),savedCA=await dbGet(groupKey('CA'));
   const shared=monthly||legacy||{};
-  state.capacities=shared.capacities||{};state.details=shared.details||{};state.pageMap=shared.pageMap||{};
+  const typed=o=>Object.fromEntries(Object.entries(o||{}).map(([k,v])=>[lineKey(k)||k,v]));
+  state.capacities=typed(shared.capacities);state.details=typed(shared.details);state.pageMap=typed(shared.pageMap);
   for(const pos of ['FO','CA']){
    const saved=pos==='FO'?(savedFO||legacy):savedCA;
    if(saved?.people?.length)groups[pos]={...emptyGroup(),...saved,awards:[],selectedName:localStorage.getItem('sbo-selected-pilot-'+pos)||saved.selectedName||''};
@@ -94,7 +95,8 @@ $('homeRefresh').onclick=()=>document.querySelector('[data-tab="refresh"]').clic
 
 function norm(s){return String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z ]/g,' ').trim().split(/\s+/).filter(Boolean).sort().join(' ')}
 function match(a,b){let x=norm(a).split(' '),y=norm(b).split(' ');return x.length>=2&&y.length>=2&&x.filter(t=>y.includes(t)).length>=2}
-function parseNums(s){return [...new Set((String(s||'').match(/(?:F\s*)?\d+/gi)||[]).map(x=>Number(x.replace(/[^0-9]/g,''))).filter(x=>x>0&&x<500))]}
+function lineKey(v){const m=String(v??'').trim().match(/^([FQ])?\s*(\d{1,3})$/i);return m&&Number(m[2])>0?(m[1]?.toUpperCase()==='Q'?'Q':'F')+Number(m[2]):null}
+function parseNums(s){return [...new Set((String(s||'').match(/\b[FQ]?\s*\d{1,3}\b/gi)||[]).map(lineKey).filter(Boolean))]}
 function rows(wb,name){let sh=wb.Sheets[name]||wb.Sheets[wb.SheetNames[0]];return XLSX.utils.sheet_to_json(sh,{header:1,defval:''})}
 async function excel(file){if(!window.XLSX)throw Error('Excel library unavailable. Connect to the internet and reload.');return XLSX.read(await file.arrayBuffer(),{type:'array'})}
 function parseRoster(wb){let r=rows(wb,'777');if(!wb.Sheets['777'])throw Error('777 worksheet not found in monthly Bid List.');let header=r.slice(0,30).flatMap((row,i)=>row.map((v,j)=>({v:String(v).toUpperCase().trim(),i,j})));let exclusions=[];
@@ -112,7 +114,7 @@ function parseBidRows(r){ // The company export uses repeated Name/Choice/Line r
      if(!current||!match(current.name,name)){current={name,bids:[],raw:[]};people.push(current)}
    }
    if(!current)continue;
-   let ln=line.match(/\bF?\s*(\d{1,3})\b/i);if(ln&&Number(ln[1])>0){let n=Number(ln[1]);let rank=Number(choice.replace(/\D/g,''));current.raw.push({n,rank:Number.isFinite(rank)?rank:9999,seq:i})}
+   let ln=line.match(/\b([FQ])\s*(\d{1,3})\b/i);if(ln&&Number(ln[2])>0){let n=ln[1].toUpperCase()+Number(ln[2]);let rank=Number(choice.replace(/\D/g,''));current.raw.push({n,rank:Number.isFinite(rank)?rank:9999,seq:i})}
  }
  for(let p of people){p.raw.sort((a,b)=>a.rank-b.rank||a.seq-b.seq);p.bids=[...new Set(p.raw.map(x=>x.n))];delete p.raw}
  return people.filter(x=>x.name.length>3)}
@@ -123,31 +125,36 @@ async function parsePdf(file){
  const capacities={},details={},pageMap={};
  for(let i=1;i<=doc.numPages;i++){
   const page=await doc.getPage(i),content=await page.getTextContent(),t=content.items.map(x=>x.str).join(' ');
-  const id=t.match(/\bF\s*(\d{1,3})\s*[-–]\s*\d+\s*\/\s*(\d+)\b/i);
+  const id=t.match(/\b([FQ])\s*(\d{1,3})\s*[-–]\s*\d+\s*\/\s*(\d+)\b/i);
   if(!id)continue;
-  const n=Number(id[1]);capacities[n]=Number(id[2]);pageMap[n]=i;
+  const n=id[1].toUpperCase()+Number(id[2]);capacities[n]=Number(id[3]);pageMap[n]=i;
   const credit=t.match(/Credit\s*time\s*:\s*(\d{1,3}:\d{2})/i),days=t.match(/Duty\s*days\s*:\s*(\d+)/i);
   details[n]={credit:credit?.[1]||'—',duties:days?.[1]||'—'};
  }
  return {capacities,details,pageMap};
 }
-function simulate(){let left={...state.capacities},awards=[];for(let i=0;i<state.people.length;i++){let p=state.people[i],exc=state.excluded.find(e=>match(e.name,p.name)),bids=state.overrides[p.name]||p.bids,got=null,rank=null;
- if(!exc)for(let j=0;j<bids.length;j++){let n=bids[j];if(left[n]>0){got=n;rank=j+1;left[n]--;break}}
- awards.push({name:p.name,seniority:i+1,line:got,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length})}
- state.awards=awards;groups[position].awards=awards;recalculateOtherGroup();render()}
+// CQ pilots bid and receive projected lines, but use a separate capacity pool.
+// Vacation pilots remain ineligible. Seniority order is preserved within each pool.
+function isCQ(reason){return /\bCQ\b/i.test(reason||'')}
+function projectGroup(g){
+ const pools={regular:Object.fromEntries(Object.entries(state.capacities).filter(([k])=>String(k).startsWith('F')||/^\d+$/.test(k))),cq:Object.fromEntries(Object.entries(state.capacities).filter(([k])=>String(k).startsWith('Q')))};
+ return g.people.map((p,i)=>{
+  const exc=g.excluded.find(e=>match(e.name,p.name));
+  const cq=isCQ(exc?.reason),vac=!!exc&&!cq;
+  const bids=(g.overrides[p.name]||p.bids).map(lineKey).filter(Boolean);
+  const left=pools[cq?'cq':'regular'];
+  let line=null,rank=null;
+  if(!vac)for(let j=0;j<bids.length;j++)if(bids[j].startsWith(cq?'Q':'F')&&left[bids[j]]>0){line=bids[j];rank=j+1;left[line]--;break}
+  return {name:p.name,seniority:i+1,line,rank,blank:p.bids.length===0,
+   excluded:vac?(exc?.reason||''):'',cq,bidCount:p.bids.length};
+ });
+}
+function simulate(){state.awards=projectGroup(state);groups[position].awards=state.awards;recalculateOtherGroup();render()}
 function recalculateOtherGroup(){
  const other=position==='CA'?'FO':'CA',g=groups[other];
- if(!g.people.length){g.awards=[];return}
- const left={...state.capacities},awards=[];
- for(let i=0;i<g.people.length;i++){
-  const p=g.people[i],exc=g.excluded.find(e=>match(e.name,p.name)),bids=g.overrides[p.name]||p.bids;
-  let line=null,rank=null;
-  if(!exc)for(let j=0;j<bids.length;j++)if(left[bids[j]]>0){line=bids[j];rank=j+1;left[line]--;break}
-  awards.push({name:p.name,seniority:i+1,line,rank,blank:p.bids.length===0,excluded:exc?.reason||'',bidCount:p.bids.length});
- }
- g.awards=awards;
+ g.awards=g.people.length?projectGroup(g):[];
 }
-function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?'F'+me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Provisional award':'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior CQ/Vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots();renderCrew();renderMyBid()}
+function render(){let me=state.awards.find(p=>p.name===state.selectedName);$('award').textContent=me?.line?me.line:'—';$('status').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?(me.cq?'CQ provisional award':'Provisional award'):'No projected line';$('credit').textContent=state.details[me?.line]?.credit||'—';$('duties').textContent=state.details[me?.line]?.duties||'—';$('rank').textContent=me?.rank?'#'+me.rank:'—';let senior=me?state.awards.slice(0,me.seniority-1):[];$('blanks').textContent=me?senior.filter(x=>x.blank&&!x.excluded).length:'—';$('eligible').textContent=state.awards.filter(x=>!x.excluded&&!x.cq).length||'—';$('viewProjectedLine').disabled=!me?.line; if(!$('lineDetail').classList.contains('hidden'))showProjectedLine();$('notes').textContent=me?`Seniority position ${me.seniority} in exported bid report. ${senior.filter(x=>x.excluded).length} senior vacation exclusions. ${senior.filter(x=>x.blank&&!x.excluded).length} eligible senior blank bids. Projection only; company award rules may differ.`:'Import the three files and select a pilot to calculate a projected line.';renderPilots();renderCrew();renderMyBid()}
 function renderCrew(){
  const summary=$('crewSummary'),members=$('crewMembers');members.replaceChildren();
  const me=state.awards.find(p=>p.name===state.selectedName);
@@ -160,10 +167,10 @@ function renderCrew(){
   const matches=all.filter(p=>p.position===pos);
   if(!groups[pos].people.length){const p=document.createElement('p');p.className='muted';p.textContent='Import the '+(pos==='CA'?'Captain':'First Officer')+' bid report to see this group.';members.append(p);continue}
   if(!matches.length){const p=document.createElement('p');p.className='muted';p.textContent='No projected pilots on this line.';members.append(p);continue}
-  for(const p of matches){const div=document.createElement('div');div.className='crew-member';const name=document.createElement('strong');name.textContent=p.name;const detail=document.createElement('small');detail.textContent='Seniority #'+p.seniority+' · Choice #'+(p.rank||'—');div.append(name,detail);members.append(div)}
+  for(const p of matches){const div=document.createElement('div');div.className='crew-member';const name=document.createElement('strong');name.textContent=p.name;const detail=document.createElement('small');detail.textContent='Seniority #'+p.seniority+(p.cq?' · CQ':'')+' · Choice #'+(p.rank||'—');div.append(name,detail);members.append(div)}
  }
 }
-function renderPilots(){let q=$('search').value.trim().toLowerCase(),list=state.awards.filter(p=>!q||p.name.toLowerCase().includes(q)||('f'+p.line).toLowerCase()===q);$('pilotList').replaceChildren(...list.map(p=>{let d=document.createElement('div');d.className='pilot';let a=document.createElement('div'),b=document.createElement('b'),sm=document.createElement('small');a.textContent=`${p.seniority}. ${p.name}`;sm.textContent=p.excluded?p.excluded:p.blank?'No bid submitted':p.line?`Choice #${p.rank}`:'No available submitted choice';a.append(sm);b.textContent=p.excluded?'Excluded':p.line?'F'+p.line:'—';d.append(a,b);return d}))}
+function renderPilots(){let q=$('search').value.trim().toLowerCase(),list=state.awards.filter(p=>!q||p.name.toLowerCase().includes(q)||(String(p.line||'').toLowerCase()).toLowerCase()===q);$('pilotList').replaceChildren(...list.map(p=>{let d=document.createElement('div');d.className='pilot';let a=document.createElement('div'),b=document.createElement('b'),sm=document.createElement('small');a.textContent=`${p.seniority}. ${p.name}`;sm.textContent=p.excluded?p.excluded:(p.cq?'CQ · ':'')+(p.blank?'No bid submitted':p.line?`Choice #${p.rank}`:'No available submitted choice');a.append(sm);b.textContent=p.excluded?'Excluded':p.line?p.line:'—';d.append(a,b);return d}))}
 $('search').oninput=renderPilots;
 function selectPilot(name){
  state.selectedName=name;groups[position].selectedName=name;
@@ -171,7 +178,7 @@ function selectPilot(name){
  hideHomePilotResults();
  if(name){try{localStorage.setItem('sbo-selected-pilot-'+position,name)}catch(e){console.warn('Name could not be remembered',e)}}
  const pilot=state.people.find(p=>p.name===name);
- $('choices').value=(pilot?(state.overrides[name]||pilot.bids):[]).map(n=>'F'+n).join('\n');
+ $('choices').value=(pilot?(state.overrides[name]||pilot.bids):[]).map(n=>lineKey(n)).filter(Boolean).join('\n');
  $('prefMsg').textContent=pilot?'Imported bids shown. Changes are what-if only.':'';
  if(state.people.length)render();
 }
@@ -205,9 +212,9 @@ async function importBids(){
    try{exclusions[pos]=parseRoster(workbook)}finally{position=prior}
   }
  }else{
-  capacities={...base.capacities};details={...base.details};pageMap={...(base.pageMap||{})};
+  capacities=Object.fromEntries(Object.entries(base.capacities||{}).map(([k,v])=>[lineKey(k)||k,v]));details=Object.fromEntries(Object.entries(base.details||{}).map(([k,v])=>[lineKey(k)||k,v]));pageMap=Object.fromEntries(Object.entries(base.pageMap||{}).map(([k,v])=>[lineKey(k)||k,v]));
  }
- for(const m of $('capacities').value.matchAll(/F?\s*(\d+)\s*=\s*(\d+)/gi))capacities[Number(m[1])]=Number(m[2]);
+ for(const m of $('capacities').value.matchAll(/([FQ])\s*(\d+)\s*=\s*(\d+)/gi))capacities[m[1].toUpperCase()+Number(m[2])]=Number(m[3]);
  const pending={};
  for(const pos of ['CA','FO']){
   if(!selected[pos])continue;
@@ -264,7 +271,7 @@ async function showProjectedLine(){
  const me=state.awards.find(p=>p.name===state.selectedName);
  if(!me?.line){$('lineDetail').classList.add('hidden');return}
  const token=++lineViewToken;
- $('lineDetailTitle').textContent='Projected line F'+me.line;
+ $('lineDetailTitle').textContent='Projected line '+me.line;
  $('lineDetail').classList.remove('hidden');
  $('lineDetailMessage').textContent='Loading original line chart…';
  $('lineChart').replaceChildren();
@@ -292,7 +299,7 @@ async function showProjectedLine(){
   cropped.width=width;cropped.height=height;
   cropped.getContext('2d').drawImage(full,left,top,width,height,0,0,width,height);
   cropped.setAttribute('role','img');
-  cropped.setAttribute('aria-label','Original Kalitta PDF chart for line F'+me.line);
+  cropped.setAttribute('aria-label','Original Kalitta PDF chart for line '+me.line);
   $('lineChart').append(cropped);
   $('lineZoom').classList.remove('hidden');
   $('lineDetailMessage').textContent='Original chart from your imported PDF. Tap Enlarge for a clearer view, then scroll sideways.';
@@ -333,41 +340,41 @@ function renderMyBid(){
  const pilot=state.people.find(p=>p.name===state.selectedName), me=state.awards.find(a=>a.name===state.selectedName);
  const list=$('myBidLines');list.replaceChildren();
  $('myBidPilot').textContent=pilot?pilot.name+' · 777 '+position:'Select a pilot on Home to see their bid outlook.';
- $('myBidAward').textContent=me?.line?'F'+me.line:'—';
- $('myBidAwardBadge').textContent=me?.excluded?'Excluded':me?.line?'Currently projected':'No projected line';
- $('myBidAwardDetail').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?'Based on current imported bids and seniority':'Import bids and select a pilot to calculate your outlook.';
+ $('myBidAward').textContent=me?.line?me.line:'—';
+ $('myBidAwardBadge').textContent=me?.excluded?'Excluded':me?.line?(me.cq?'CQ projected':'Currently projected'):'No projected line';
+ $('myBidAwardDetail').textContent=me?.excluded?'Excluded: '+me.excluded:me?.line?(me.cq?'CQ bid projection, separate from regular line capacity':'Based on current imported bids and seniority'):'Import bids and select a pilot to calculate your outlook.';
  $('myBidRank').textContent=me?.rank?'#'+me.rank:'—';
  $('myBidCapacity').textContent=me?.line?String(state.capacities[me.line]??'—'):'—';
  const senior=me?state.awards.slice(0,me.seniority-1):[];
- const blankCount=senior.filter(a=>a.blank&&!a.excluded).length;
+ const blankCount=senior.filter(a=>a.cq===me.cq&&a.blank&&!a.excluded).length;
  $('myBidBlanks').textContent=me?String(blankCount):'—';
  $('myBidNext').textContent='—';$('myBidNextRank').textContent='';
  $('myBidNextNote').textContent='Your next currently open preference will appear here.';
  $('myBidCount').textContent='';
  if(!pilot||!me){const msg=document.createElement('p');msg.className='muted';msg.textContent='Select a pilot on Home to see their ranked choices.';list.append(msg);return}
- const bids=state.overrides[pilot.name]||pilot.bids;
+ const bids=(state.overrides[pilot.name]||pilot.bids).map(lineKey).filter(Boolean);
  if(!bids.length){const msg=document.createElement('p');msg.className='muted';msg.textContent='No ranked choices found for this pilot.';list.append(msg);return}
  const remaining={...state.capacities};
- for(const a of senior)if(a.line!=null&&remaining[a.line]!=null)remaining[a.line]=Math.max(0,remaining[a.line]-1);
- const nextIndex=me.line?bids.findIndex((line,i)=>i>=me.rank&&remaining[line]>0):-1;
- if(nextIndex>=0){$('myBidNext').textContent='F'+bids[nextIndex];$('myBidNextRank').textContent='Choice #'+(nextIndex+1);$('myBidNextNote').textContent='Currently open after senior pilots are assigned. This is a conditional alternative, not a guaranteed award.'}
+ for(const a of senior)if(a.cq===me.cq&&a.line!=null&&remaining[a.line]!=null)remaining[a.line]=Math.max(0,remaining[a.line]-1);
+ const nextIndex=me.line?bids.findIndex((line,i)=>i>=me.rank&&line.startsWith(me.cq?'Q':'F')&&remaining[line]>0):-1;
+ if(nextIndex>=0){$('myBidNext').textContent=bids[nextIndex];$('myBidNextRank').textContent='Choice #'+(nextIndex+1);$('myBidNextNote').textContent='Currently open after senior pilots are assigned. This is a conditional alternative, not a guaranteed award.'}
  else $('myBidNextNote').textContent=me.line?'No later choice is currently open after senior pilots are assigned.':'No available choice in the current projection.';
  $('myBidCount').textContent=bids.length+' choices';
  for(let i=0;i<bids.length;i++){
   const line=bids[i],cap=state.capacities[line],remainingSlots=remaining[line]||0;
-  const available=remainingSlots>0,projected=me.line===line&&me.rank===i+1;
-  const holders=senior.filter(a=>a.line===line);
+  const available=line.startsWith(me.cq?'Q':'F')&&remainingSlots>0,projected=me.line===line&&me.rank===i+1;
+  const holders=senior.filter(a=>a.cq===me.cq&&a.line===line);
   const item=document.createElement('details');item.className='mybid-line';
   const summary=document.createElement('summary');
   const order=document.createElement('span');order.className='mybid-order';order.textContent=i+1;
   const info=document.createElement('span');info.className='mybid-line-info';
-  const title=document.createElement('b');title.textContent='F'+line;
+  const title=document.createElement('b');title.textContent=line;
   const sub=document.createElement('small');sub.textContent=cap==null?'Capacity unavailable':cap+' '+position+' position'+(cap===1?'':'s')+' · '+remainingSlots+' remaining';
   info.append(title,sub);
   const badge=document.createElement('span');badge.className='bid-pill '+(available?'bid-yes':'bid-no');badge.textContent=projected?'Projected award':available?'Can hold':'Cannot hold';
   summary.append(order,info,badge);item.append(summary);
   const explanation=document.createElement('div');explanation.className='mybid-explanation';
-  const description=document.createElement('p');description.textContent=cap==null?'No capacity was found for this line in the imported PDF.':available?'A position remains after currently submitted senior bids are simulated.':holders.length?'All positions are currently occupied by projected senior pilots.':'No position is available under the imported capacity data.';
+  const description=document.createElement('p');description.textContent=!line.startsWith(me.cq?'Q':'F')?'This line is not eligible for this pilot’s CQ status.':cap==null?'No capacity was found for this line in the imported PDF.':available?'A position remains after currently submitted senior bids are simulated.':holders.length?'All positions are currently occupied by projected senior pilots.':'No position is available under the imported capacity data.';
   explanation.append(description);
   if(holders.length){const heading=document.createElement('small');heading.textContent='Projected senior holders:';explanation.append(heading);const ul=document.createElement('ul');for(const h of holders){const li=document.createElement('li');li.textContent=h.name+' · seniority #'+h.seniority;ul.append(li)}explanation.append(ul)}
   if(projected){const note=document.createElement('small');note.textContent='This is your first available preference in the current projection.';explanation.append(note)}
