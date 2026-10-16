@@ -43,3 +43,21 @@
 .subscription-link{display:block;margin-top:3px;font:inherit;font-size:inherit}
 .subscription-link a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .subscription-link a:hover,.subscription-link a:focus-visible{opacity:.8}
+
+/* Option 3: slim, responsive pilot / bidding status strip */
+.pilot-status-strip{display:block;background:#fff;border:1px solid #dce7f2;border-radius:16px;padding:14px 16px;box-shadow:0 2px 12px #14263b08}
+.pilot-strip-top,.pilot-strip-bottom{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pilot-strip-top{align-items:center}
+.pilot-status-strip .pilot-search-field{flex:1;min-width:0}
+.pilot-status-strip .pilot-search-field>label{font-size:10px;font-weight:800;letter-spacing:.85px;color:#6b8094}
+.pilot-status-strip .pilot-search-wrap{margin-top:3px}
+.pilot-status-strip #homePilotSearch{border:0;background:transparent;padding:3px 0;font-size:19px;font-weight:800;line-height:1.4;border-radius:4px;box-shadow:none;outline-offset:3px}
+.pilot-status-strip #homePilotSearch:focus-visible{outline:2px solid #527eab}
+.pilot-timer-inline{display:flex;flex-direction:column;align-items:flex-end;gap:3px;white-space:nowrap;flex:none}
+.pilot-timer-time{font-size:18px;font-weight:800;color:#173d66;font-variant-numeric:tabular-nums;letter-spacing:-.3px}
+.pilot-timer-time b{font:inherit}
+.pilot-timer-inline small{font-size:10px;color:#73879c}
+.pilot-strip-bottom{margin-top:10px;border-top:1px solid #e2eaf3;padding-top:10px}
+.pilot-status-strip .local-chip{padding:0;background:none;font-size:11px}
+.pilot-status-strip .bid-countdown-deadline{margin:0;font-size:11px}
+@media(max-width:390px){.pilot-status-strip{padding:12px}.pilot-status-strip #homePilotSearch{font-size:16px}.pilot-timer-time{font-size:15px}.pilot-strip-top{gap:8px}.pilot-timer-inline small{font-size:9px}}
