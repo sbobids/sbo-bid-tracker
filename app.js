@@ -185,7 +185,7 @@ async function importBids(){
  const pf=$('linesFile').files[0],rf=$('rosterFile').files[0];
  const selected={CA:$('captainBidsFile').files[0],FO:$('foBidsFile').files[0]};
  // Quick update on Refresh tab is scoped to the active position.
- if($('bidsFile').files[0])selected[position]=$('bidsFile').files[0];
+ if($('bidsFile').files[0] && !selected[position])selected[position]=$('bidsFile').files[0];
  if(!selected.CA&&!selected.FO)throw Error('Choose at least one Captain or First Officer bids report.');
  const prior=position;
  const monthly=await dbGet('monthly'),legacy=await dbGet('parsed');
@@ -210,7 +210,9 @@ async function importBids(){
  for(const pos of ['CA','FO']){
   if(!selected[pos])continue;
   status.textContent='Reading '+(pos==='CA'?'Captain':'First Officer')+' bids…';
-  const people=parseBidRows(rows(await excel(selected[pos]),'Sheet1'));
+  const report=await excel(selected[pos]);
+   const reportSheet=report.SheetNames.find(n=>/^ViewAllBids$/i.test(n))||report.SheetNames[0];
+   const people=parseBidRows(rows(report,reportSheet));
   if(people.length<30)throw Error('Only '+people.length+' '+pos+' pilots found. Verify the '+pos+' export.');
   pending[pos]={people,excluded:exclusions[pos]||[],overrides:{},updatedAt:new Date().toISOString(),selectedName:groups[pos].selectedName||''};
  }
@@ -251,7 +253,7 @@ $('refreshUpdate').onclick=async()=>{
  await $('analyze').onclick();
  const msg=$('importStatus').textContent;
  $('refreshStatus').textContent=msg;
- if(msg.startsWith('Saved locally:')){
+ if(msg.startsWith('Saved:')){
    $('refreshFileName').textContent='No report selected';
    $('refreshUpdate').disabled=true;
  }else{
